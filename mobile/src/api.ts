@@ -17,6 +17,7 @@ export async function logout(){await SecureStore.deleteItemAsync(TOKEN_KEY);}
 export async function me(){return request("/api/v1/me");}
 export async function dashboard(){return request("/api/v1/dashboard");}
 export async function invoices(){return request("/api/v1/invoices");}
+export async function customers(){return request("/api/v1/customers");}
 export async function createInvoice(payload:any){return request("/api/v1/invoices",{method:"POST",body:JSON.stringify(payload)});}
 export async function markPaid(id:number){return request("/api/v1/invoices/"+id+"/mark-paid",{method:"POST"});}
 export async function createPaymentLink(id:number){return request("/api/v1/invoices/"+id+"/payment-link",{method:"POST"});}
