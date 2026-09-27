@@ -43,7 +43,7 @@ The API uses signed bearer tokens. Browser sessions remain isolated from API aut
 - signed sessions
 - encrypted integration credentials
 - Razorpay + WhatsApp integrations
-- optional OpenAI copy generation
+- optional OpenAI copy generation\n- LangGraph action orchestration\n- Frictionless tabular validation\n- Optional Sentry production tracing
 
 ## Production environment
 
