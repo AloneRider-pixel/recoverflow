@@ -24,6 +24,8 @@ def _razorpay_request(method, path, key_id, key_secret, payload=None):
             detail = r.json().get("error", {}).get("description", r.text)
         except Exception:
             detail = r.text
+        if r.status_code == 429:
+            raise HTTPException(429, "Razorpay is rate-limiting requests. Reuse the existing payment link or wait a moment before trying again.")
         raise HTTPException(502, f"Razorpay error: {detail}")
     return r.json()
 
