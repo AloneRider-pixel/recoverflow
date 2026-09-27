@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-7 md:py-9">
+  <div class="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-5">
+    <div>
+      <div class="rf-kicker">COLLECTIONS OPERATING SYSTEM</div>
+      <h1 class="mt-2 text-3xl md:text-5xl font-black tracking-[-.04em]">Today's collections.</h1>
+      <p class="mt-3 max-w-2xl text-sm leading-6 text-slate-500">Every open receivable gets a priority, a reason, a next action and a deadline. Work the queue from top to bottom.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <span class="rf-pill text-cyan-100 border-cyan-200/10 bg-cyan-200/[.025]">LangGraph action engine</span>
+      <a href="/collections" class="rf-btn-secondary text-xs">Open full queue →</a>
+      <a href="/invoices/import" class="rf-btn-secondary text-xs">Import receivables</a>
+    </div>
+  </div>
+
+  {% if message %}
+  <div class="mt-5 rounded-2xl border border-emerald-200/10 bg-emerald-200/[.025] px-4 py-3 text-sm text-emerald-100">{{message}}</div>
+  {% endif %}
+
+  <div class="mt-7 grid sm:grid-cols-2 xl:grid-cols-5 gap-3">
+    <div class="rf-card p-5"><div class="rf-kicker">Outstanding</div><div class="mt-2 text-2xl font-black">{{money(outstanding)}}</div><div class="mt-1 text-[11px] text-slate-600">Open balance</div></div>
+    <div class="rf-card p-5"><div class="rf-kicker">Overdue</div><div class="mt-2 text-2xl font-black text-rose-100">{{money(overdue)}}</div><div class="mt-1 text-[11px] text-slate-600">Past due</div></div>
+    <div class="rf-card p-5"><div class="rf-kicker">Actions today</div><div class="mt-2 text-2xl font-black">{{actions_today}}</div><div class="mt-1 text-[11px] text-slate-600">Due or overdue tasks</div></div>
+    <div class="rf-card p-5"><div class="rf-kicker">Broken promises</div><div class="mt-2 text-2xl font-black text-amber-100">{{broken}}</div><div class="mt-1 text-[11px] text-slate-600">Needs escalation</div></div>
+    <div class="rf-card p-5"><div class="rf-kicker">Near-term cash</div><div class="mt-2 text-2xl font-black">{{money(due_7)}}</div><div class="mt-1 text-[11px] text-slate-600">Due in the next 7 days</div></div>
+  </div>
+
+  <div class="mt-7 grid xl:grid-cols-[1.35fr_.65fr] gap-4 items-start">
+    <div class="rf-card overflow-hidden">
+      <div class="px-5 sm:px-6 py-5 border-b border-white/6 flex items-center justify-between gap-3">
+        <div><div class="rf-kicker">Action queue</div><h2 class="mt-1.5 text-lg font-bold">What your team should do next</h2></div>
+        <span class="rf-pill text-slate-500">{{tasks|length}} active tasks</span>
+      </div>
+
+      {% for row in tasks %}
+      <div class="p-5 sm:p-6 border-b border-white/6 last:border-b-0">
+        <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="rf-pill {% if row.priority == 'Critical' %}text-rose-100 border-rose-300/10 bg-rose-300/[.035]{% elif row.priority == 'High' %}text-amber-100 border-amber-200/10 bg-amber-200/[.035]{% else %}text-cyan-100{% endif %}">{{row.priority}}</span>
+              <span class="text-[10px] uppercase tracking-[.15em] text-slate-700">{{row.action_type|replace('_',' ')}}</span>
+              <span class="text-[10px] text-slate-700">Due {{row.due_at.strftime('%d %b %Y %H:%M') if row.due_at else 'now'}}</span>
+            </div>
+            <a href="/invoices/{{row.invoice.id}}" class="mt-3 block text-base font-black hover:text-cyan-100">{{row.invoice.customer_name}}</a>
+            <div class="mt-1 text-xs text-slate-600">{{row.invoice.invoice_number}} · {{money(row.invoice.balance)}} outstanding · {{row.invoice.days_overdue}}d overdue</div>
+            <div class="mt-3 text-sm text-slate-300">{{row.recommended_action}}</div>
+            <div class="mt-1 text-[11px] leading-5 text-slate-600">{{row.reason}}</div>
+          </div>
+          <form method="post" action="/today/tasks/{{row.task.id}}/complete" class="w-full lg:w-[360px]">
+            <input type="hidden" name="csrf" value="{{csrf}}">
+            <textarea name="outcome" rows="2" class="rf-input text-xs" placeholder="Optional outcome: customer asked for Friday..."></textarea>
+            <button class="rf-btn-primary w-full mt-2 text-xs">Complete action & log outcome</button>
+          </form>
+        </div>
+      </div>
+      {% else %}
+      <div class="px-6 py-16 text-center">
+        <div class="mx-auto h-12 w-12 rounded-2xl border border-emerald-200/10 bg-emerald-200/[.03] grid place-items-center text-emerald-100">✓</div>
+        <div class="mt-4 font-bold">No active collection tasks.</div>
+        <div class="mt-1 text-sm text-slate-600">Your current receivables do not need an immediate action.</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <aside class="space-y-4">
+      <div class="rf-card p-5 sm:p-6">
+        <div class="rf-kicker">Why this action</div>
+        <h2 class="mt-2 text-lg font-bold">Every recommendation is explainable.</h2>
+        <div class="mt-5 space-y-3 text-xs leading-5 text-slate-500">
+          <div><span class="font-bold text-slate-300">Priority:</span> overdue age, balance and exception state.</div>
+          <div><span class="font-bold text-slate-300">Next action:</span> designed for a human to approve and execute.</div>
+          <div><span class="font-bold text-slate-300">Memory:</span> customer replies and promises stay attached to the invoice.</div>
+          <div><span class="font-bold text-slate-300">No silent payment decisions:</span> payment verification and ledger closure remain controlled.</div>
+        </div>
+      </div>
+      <div class="rf-card p-5 sm:p-6">
+        <div class="rf-kicker">Upcoming</div>
+        <div class="mt-4 space-y-3">
+          {% for row in upcoming %}
+          <a href="/invoices/{{row.invoice.id}}" class="block rounded-2xl border border-white/6 bg-white/[.012] p-4 hover:bg-white/[.025]">
+            <div class="flex items-center justify-between gap-3"><div class="font-bold text-sm truncate">{{row.invoice.customer_name}}</div><span class="text-[10px] text-slate-700">{{row.task.due_at.strftime('%d %b') if row.task.due_at else ''}}</span></div>
+            <div class="mt-1 text-xs text-slate-600">{{row.action_type|replace('_',' ')}} · {{money(row.invoice.balance)}}</div>
+          </a>
+          {% else %}
+          <div class="text-sm text-slate-600">Nothing scheduled.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+{% endblock %}
