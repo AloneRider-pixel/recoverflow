@@ -10,6 +10,14 @@
   </div>
   {% if demo_added %}<div class="mb-5 rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4 text-sm text-emerald-200">Added {{demo_added}} demo invoices to this workspace.</div>{% endif %}
   {% if message %}<div class="mb-5 rounded-2xl border border-rf-400/15 bg-rf-400/5 p-4 text-sm text-rf-200">{{message}}</div>{% endif %}
+  <div class="grid lg:grid-cols-[1.25fr_.75fr] gap-3 mb-7">
+    <div class="glass rounded-3xl p-5 sm:p-6">
+      <div class="flex items-end justify-between"><div><div class="text-xs font-bold tracking-[.18em] text-rf-300">COLLECTION PERFORMANCE</div><h2 class="font-bold text-lg mt-2">Cash recovery</h2></div><div class="text-2xl font-black">{{'%.1f'|format(collection_rate)}}%</div></div>
+      <div class="h-2 rounded-full bg-rf-950 mt-5 overflow-hidden"><div class="h-full rounded-full bg-gradient-to-r from-rf-400 to-cyan-200" style="width: {{[collection_rate,100]|min}}%"></div></div>
+      <div class="flex justify-between text-xs text-slate-600 mt-2"><span>Paid {{money(paid)}}</span><span>Invoiced {{money(invoiced)}}</span></div>
+    </div>
+    <div class="glass rounded-3xl p-5 sm:p-6"><div class="text-xs font-bold tracking-[.18em] text-rf-300">AGING</div><div class="space-y-3 mt-4">{% for bucket in ['Current','1–7 days','8–30 days','30+ days'] %}<div><div class="flex justify-between text-xs mb-1"><span class="text-slate-500">{{bucket}}</span><span class="font-semibold">{{money(aging[bucket])}}</span></div><div class="h-1.5 rounded-full bg-rf-950 overflow-hidden"><div class="h-full bg-rf-500 rounded-full" style="width: {{0 if outstanding==0 else [((aging[bucket]/outstanding)*100),100]|min}}%"></div></div></div>{% endfor %}</div></div>
+  </div>
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-7">
     {% for label,value in [('Outstanding',outstanding),('Overdue',overdue),('Due today',due_today),('Customers',customers)] %}
     <div class="glass rounded-2xl p-5 shadow-soft"><div class="text-xs font-semibold text-slate-500">{{label}}</div><div class="text-2xl md:text-3xl font-black mt-2">{% if label=='Customers' %}{{value}}{% else %}{{money(value)}}{% endif %}</div>{% if label=='Overdue' and value %}<div class="text-xs text-rose-300 mt-2">Needs attention</div>{% else %}<div class="text-xs text-slate-600 mt-2">Current position</div>{% endif %}</div>
