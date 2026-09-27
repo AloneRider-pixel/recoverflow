@@ -10,6 +10,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(180), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(300))
     company_name: Mapped[str] = mapped_column(String(180), default="My Business")
+    workspace_id: Mapped[int | None] = mapped_column(ForeignKey("workspaces.id"), nullable=True, index=True)
+    role: Mapped[str] = mapped_column(String(30), default="owner")
     razorpay_key_id_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     razorpay_key_secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     razorpay_webhook_secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -35,6 +37,7 @@ class Invoice(Base):
     __tablename__ = "invoices"
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    workspace_id: Mapped[int | None] = mapped_column(ForeignKey("workspaces.id"), nullable=True, index=True)
     invoice_number: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     customer_name: Mapped[str] = mapped_column(String(180), index=True)
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
