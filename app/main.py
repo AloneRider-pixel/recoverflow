@@ -1434,6 +1434,26 @@ def collections_page(request:Request,db:Session=Depends(get_db)):
         "money":money,"message":request.query_params.get("message",""),"error":request.query_params.get("error",""),**commercial_context(user)
     })
 
+
+@app.post("/collections/{invoice_id}/analyze")
+async def analyze_collection_reply_page(
+    invoice_id:int,request:Request,csrf:str=Form(...),reply:str=Form(...),
+    db:Session=Depends(get_db)
+):
+    user,workspace=require_role(request,db,"owner","admin","finance","collector"); check_csrf(request,csrf)
+    invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.workspace_id==workspace.id))
+    if not invoice: raise HTTPException(404,"Invoice not found")
+    result=analyze_collection_reply(invoice,reply)
+    return JSONResponse({
+        "ok":True,
+        "event_type":result["event_type"],
+        "promised_date":result["promised_date"].isoformat() if result["promised_date"] else "",
+        "promised_amount":str(result["promised_amount"]) if result["promised_amount"] is not None else "",
+        "confidence":result["confidence"],
+        "reason":result["reason"],
+        "source":result["source"],
+    })
+
 @app.post("/collections/{invoice_id}/event")
 def create_collection_event(
     invoice_id:int,request:Request,csrf:str=Form(...),event_type:str=Form(...),
