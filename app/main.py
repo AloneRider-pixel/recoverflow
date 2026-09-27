@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session
 from openai import OpenAI
 from .config import settings
 from .db import get_db, init_db
-from .models import User, Invoice, PaymentLink, ReminderLog, BillingPlan
-from .security import set_session, clear_session, read_session, new_csrf, encrypt, decrypt, make_api_token, read_api_token
+from .models import User, Invoice, PaymentLink, ReminderLog, BillingPlan, DeviceToken
+from .security import set_session, clear_session, read_session, new_csrf, encrypt, decrypt, make_api_token, read_api_token, make_public_invoice_token, read_public_invoice_token
 from .password import hash_password, verify_password
-from .integrations import create_payment_link, send_whatsapp_template, verify_webhook, merchant_keys, webhook_secret, platform_request
+from .integrations import create_payment_link, send_whatsapp_template, verify_webhook, merchant_keys, webhook_secret, platform_request, send_expo_push
 
 # Initialize all application tables after model imports.
 init_db()
@@ -133,7 +133,7 @@ def api_dashboard(request:Request,db:Session=Depends(get_db)):
 def api_invoices(request:Request,db:Session=Depends(get_db)):
     user=api_user(request,db)
     invoices=list(db.scalars(select(Invoice).where(Invoice.owner_id==user.id).order_by(Invoice.due_date.asc())).all())
-    return [{"id":i.id,"invoice_number":i.invoice_number,"customer_name":i.customer_name,"phone":i.phone,"email":i.email,"amount":str(i.amount),"paid_amount":str(i.paid_amount),"balance":str(i.balance),"issue_date":i.issue_date.isoformat(),"due_date":i.due_date.isoformat(),"status":i.status,"days_overdue":i.days_overdue,"aging_bucket":i.aging_bucket} for i in invoices]
+    return [{"id":i.id,"invoice_number":i.invoice_number,"customer_name":i.customer_name,"phone":i.phone,"email":i.email,"amount":str(i.amount),"paid_amount":str(i.paid_amount),"balance":str(i.balance),"issue_date":i.issue_date.isoformat(),"due_date":i.due_date.isoformat(),"status":i.status,"days_overdue":i.days_overdue,"aging_bucket":i.aging_bucket,"gstin":i.gstin,"place_of_supply":i.place_of_supply,"tax_rate":str(i.tax_rate) if i.tax_rate is not None else None,"tax_amount":str(i.tax_amount) if i.tax_amount is not None else None,"tds_amount":str(i.tds_amount) if i.tds_amount is not None else None} for i in invoices]
 
 @app.post("/api/v1/invoices")
 async def api_create_invoice(request:Request,db:Session=Depends(get_db)):
@@ -150,7 +150,10 @@ async def api_create_invoice(request:Request,db:Session=Depends(get_db)):
     num=str(data["invoice_number"]).strip()
     if amount<=0 or paid<0 or paid>amount: raise HTTPException(400,"Invalid payment values")
     if db.scalar(select(Invoice).where(Invoice.invoice_number==num)): raise HTTPException(409,"Invoice number already exists")
-    i=Invoice(owner_id=user.id,invoice_number=num,customer_name=str(data["customer_name"]).strip(),phone=str(data.get("phone","")).strip() or None,email=str(data.get("email","")).strip() or None,amount=amount,paid_amount=paid,issue_date=issue_date,due_date=due_date,status="paid" if paid>=amount else "partially_paid" if paid>0 else "unpaid",notes=str(data.get("notes","")).strip() or None)
+    tax_rate=Decimal(str(data.get("tax_rate"))) if str(data.get("tax_rate","")).strip() else None
+    tax_amount=Decimal(str(data.get("tax_amount"))) if str(data.get("tax_amount","")).strip() else None
+    tds_amount=Decimal(str(data.get("tds_amount"))) if str(data.get("tds_amount","")).strip() else None
+    i=Invoice(owner_id=user.id,invoice_number=num,customer_name=str(data["customer_name"]).strip(),phone=str(data.get("phone","")).strip() or None,email=str(data.get("email","")).strip() or None,amount=amount,paid_amount=paid,issue_date=issue_date,due_date=due_date,status="paid" if paid>=amount else "partially_paid" if paid>0 else "unpaid",notes=str(data.get("notes","")).strip() or None,gstin=str(data.get("gstin","")).strip() or None,place_of_supply=str(data.get("place_of_supply","")).strip() or None,tax_rate=tax_rate,tax_amount=tax_amount,tds_amount=tds_amount)
     db.add(i); db.commit()
     return {"id":i.id,"invoice_number":i.invoice_number,"balance":str(i.balance),"status":i.status}
 
@@ -181,12 +184,47 @@ def api_whatsapp(invoice_id:int,request:Request,db:Session=Depends(get_db)):
     db.add(ReminderLog(owner_id=user.id,invoice_id=invoice.id,stage="mobile",channel="whatsapp",status="sent",provider_message_id=message_id)); db.commit()
     return {"ok":True,"provider_message_id":message_id}
 
+@app.post("/api/v1/notifications/register")
+async def api_register_notification(request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db)
+    try: data=await request.json()
+    except Exception: raise HTTPException(400,"Invalid JSON")
+    token=str(data.get("token","")).strip()
+    platform=str(data.get("platform","unknown")).strip().lower()
+    if not token or not token.startswith("ExponentPushToken["):
+        raise HTTPException(400,"Invalid Expo push token")
+    existing=db.scalar(select(DeviceToken).where(DeviceToken.token==token))
+    if existing:
+        existing.owner_id=user.id; existing.platform=platform; existing.active=True
+    else:
+        db.add(DeviceToken(owner_id=user.id,token=token,platform=platform,active=True))
+    db.commit()
+    return {"ok":True}
+
+@app.post("/api/v1/notifications/test")
+def api_test_notification(request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db)
+    tokens=list(db.scalars(select(DeviceToken).where(DeviceToken.owner_id==user.id,DeviceToken.active==True)).all())
+    result=send_expo_push([t.token for t in tokens],"RecoverFlow is connected","Push notifications are working.",{"screen":"home"})
+    return {"ok":True,"sent":len(result)}
+
+@app.get("/pay/{token}",response_class=HTMLResponse)
+def public_invoice_pay(request:Request,token:str,db:Session=Depends(get_db)):
+    payload=read_public_invoice_token(token)
+    if not payload or not payload.get("invoice_id"): raise HTTPException(404,"Payment page not found")
+    invoice=db.get(Invoice,int(payload["invoice_id"]))
+    if not invoice or invoice.balance<=0: raise HTTPException(404,"Payment page not found")
+    link=db.scalar(select(PaymentLink).where(PaymentLink.invoice_id==invoice.id).order_by(PaymentLink.created_at.desc()))
+    return templates.TemplateResponse("pay.html",{"request":request,"invoice":invoice,"payment_link":link,"money":money,"company_name":invoice.owner_id and db.get(User,invoice.owner_id).company_name or "Business"})
+
 @app.post("/api/v1/invoices/{invoice_id}/mark-paid")
 def api_mark_paid(invoice_id:int,request:Request,db:Session=Depends(get_db)):
     user=api_user(request,db)
     invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.owner_id==user.id))
     if not invoice: raise HTTPException(404,"Invoice not found")
     invoice.paid_amount=invoice.amount; invoice.status="paid"; db.commit()
+    tokens=list(db.scalars(select(DeviceToken).where(DeviceToken.owner_id==user.id,DeviceToken.active==True)).all())
+    send_expo_push([t.token for t in tokens],"Payment received","Invoice "+invoice.invoice_number+" is marked paid.",{"screen":"invoices","invoiceId":invoice.id})
     return {"ok":True,"id":invoice.id,"status":invoice.status}
 
 @app.get("/login",response_class=HTMLResponse)
@@ -257,13 +295,13 @@ def new_invoice(request:Request,db:Session=Depends(get_db)):
     return templates.TemplateResponse("invoice_form.html",{"request":request,"user":user,"csrf":csrf_for(request),"today":date.today()})
 
 @app.post("/invoices/new")
-def create_invoice(request:Request,csrf:str=Form(...),invoice_number:str=Form(...),customer_name:str=Form(...),phone:str=Form(""),email:str=Form(""),amount:str=Form(...),paid_amount:str=Form("0"),issue_date:str=Form(...),due_date:str=Form(...),db:Session=Depends(get_db)):
+def create_invoice(request:Request,csrf:str=Form(...),invoice_number:str=Form(...),customer_name:str=Form(...),phone:str=Form(""),email:str=Form(""),amount:str=Form(...),paid_amount:str=Form("0"),issue_date:str=Form(...),due_date:str=Form(...),gstin:str=Form(""),place_of_supply:str=Form(""),tax_rate:str=Form(""),tax_amount:str=Form(""),tds_amount:str=Form(""),db:Session=Depends(get_db)):
     user=require_user(request,db); check_csrf(request,csrf)
     try: amount_d,paid_d=Decimal(amount),Decimal(paid_amount)
     except InvalidOperation: raise HTTPException(400,"Invalid amount")
     if amount_d<=0 or paid_d<0 or paid_d>amount_d: raise HTTPException(400,"Invalid payment values")
     if db.scalar(select(Invoice).where(Invoice.invoice_number==invoice_number.strip())): raise HTTPException(400,"Invoice number already exists")
-    i=Invoice(owner_id=user.id,invoice_number=invoice_number.strip(),customer_name=customer_name.strip(),phone=phone.strip() or None,email=email.strip() or None,amount=amount_d,paid_amount=paid_d,issue_date=date.fromisoformat(issue_date),due_date=date.fromisoformat(due_date),status="paid" if paid_d>=amount_d else "partially_paid" if paid_d>0 else "unpaid")
+    i=Invoice(owner_id=user.id,invoice_number=invoice_number.strip(),customer_name=customer_name.strip(),phone=phone.strip() or None,email=email.strip() or None,amount=amount_d,paid_amount=paid_d,issue_date=date.fromisoformat(issue_date),due_date=date.fromisoformat(due_date),status="paid" if paid_d>=amount_d else "partially_paid" if paid_d>0 else "unpaid",gstin=gstin.strip() or None,place_of_supply=place_of_supply.strip() or None,tax_rate=Decimal(tax_rate) if tax_rate.strip() else None,tax_amount=Decimal(tax_amount) if tax_amount.strip() else None,tds_amount=Decimal(tds_amount) if tds_amount.strip() else None)
     db.add(i);db.commit();return RedirectResponse("/",303)
 
 @app.post("/invoices/import")
@@ -358,69 +396,3 @@ def subscribe(request:Request,csrf:str=Form(...),plan_code:str=Form(...),db:Sess
         result=platform_request("POST","/plans",{"period":"monthly","interval":1,"item":{"name":meta["name"],"amount":meta["amount"],"currency":"INR","description":meta["description"]}})
         plan.razorpay_plan_id=result["id"];db.commit()
     result=platform_request("POST","/subscriptions",{"plan_id":plan.razorpay_plan_id,"total_count":120,"quantity":1,"customer_notify":1,"notes":{"recoverflow_user_id":str(user.id),"plan":plan_code}})
-    user.subscription_id=result.get("id");user.subscription_status=result.get("status","created");user.subscription_plan=plan_code;db.commit()
-    short_url=result.get("short_url")
-    if short_url: return RedirectResponse(short_url,303)
-    return RedirectResponse("/billing?message=Subscription+created",303)
-
-@app.post("/webhooks/razorpay")
-async def razorpay_webhook(request:Request,db:Session=Depends(get_db)):
-    raw=await request.body()
-    try: payload=json.loads(raw)
-    except json.JSONDecodeError: raise HTTPException(400,"Invalid JSON")
-    event=payload.get("event","")
-    if event.startswith("payment_link."):
-        entity=((payload.get("payload") or {}).get("payment_link") or {}).get("entity") or {}
-        notes=entity.get("notes") or {}
-        user_id=int(notes.get("recoverflow_user_id",0) or 0)
-        invoice_id=int(notes.get("recoverflow_invoice_id",0) or 0)
-        user=db.get(User,user_id)
-        if not user or not verify_webhook(raw,request.headers.get("x-razorpay-signature"),webhook_secret(user)):
-            raise HTTPException(401,"Invalid webhook signature")
-        invoice=db.get(Invoice,invoice_id)
-        if invoice and invoice.owner_id==user.id:
-            paid_paise=int(entity.get("amount_paid",0) or 0)
-            invoice.paid_amount=Decimal(paid_paise)/Decimal(100)
-            invoice.status="paid" if invoice.paid_amount>=invoice.amount else "partially_paid"
-            link=db.scalar(select(PaymentLink).where(PaymentLink.provider_link_id==entity.get("id")))
-            if link: link.status=entity.get("status","updated")
-            db.commit()
-        return JSONResponse({"ok":True})
-    if event.startswith("subscription."):
-        entity=((payload.get("payload") or {}).get("subscription") or {}).get("entity") or {}
-        sub_id=entity.get("id")
-        user=db.scalar(select(User).where(User.subscription_id==sub_id))
-        secret=settings.razorpay_platform_webhook_secret
-        if not user or not verify_webhook(raw,request.headers.get("x-razorpay-signature"),secret):
-            raise HTTPException(401,"Invalid webhook signature")
-        user.subscription_status=entity.get("status",user.subscription_status);db.commit()
-        return JSONResponse({"ok":True})
-    return JSONResponse({"ok":True,"ignored":True})
-
-@app.post("/internal/reminders")
-def internal_reminders(request:Request,db:Session=Depends(get_db)):
-    if not settings.cron_secret or request.headers.get("x-cron-secret")!=settings.cron_secret:
-        raise HTTPException(401,"Unauthorized")
-    sent=0; skipped=0
-    users=list(db.scalars(select(User)).all())
-    for user in users:
-        token_ok=bool(decrypt(user.whatsapp_access_token_enc) and user.whatsapp_phone_number_id and settings.whatsapp_graph_version)
-        if not token_ok: continue
-        invoices=list(db.scalars(select(Invoice).where(Invoice.owner_id==user.id,Invoice.paid_amount<Invoice.amount)).all())
-        for invoice in invoices:
-            d=invoice.days_overdue
-            stage="1d" if d>=1 and d<7 else "7d" if d>=7 and d<30 else "30d" if d>=30 else ""
-            if not stage or not invoice.phone: continue
-            exists=db.scalar(select(ReminderLog).where(ReminderLog.invoice_id==invoice.id,ReminderLog.stage==stage,ReminderLog.channel=="whatsapp"))
-            if exists: continue
-            try:
-                link=db.scalar(select(PaymentLink).where(PaymentLink.invoice_id==invoice.id,PaymentLink.owner_id==user.id).order_by(PaymentLink.created_at.desc()))
-                if not link and decrypt(user.razorpay_key_id_enc) and decrypt(user.razorpay_key_secret_enc):
-                    result=create_payment_link(user,invoice)
-                    link=PaymentLink(owner_id=user.id,invoice_id=invoice.id,provider_link_id=result["id"],short_url=result["short_url"],amount_paise=int(result["amount"]),status=result.get("status","created"))
-                    db.add(link);db.flush()
-                mid=send_whatsapp_template(user,invoice,link.short_url if link else None)
-                db.add(ReminderLog(owner_id=user.id,invoice_id=invoice.id,stage=stage,channel="whatsapp",status="sent",provider_message_id=mid));db.commit();sent+=1
-            except HTTPException:
-                db.rollback(); skipped+=1
-    return {"ok":True,"sent":sent,"skipped":skipped}
