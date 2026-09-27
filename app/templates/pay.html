@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#07111f">
+<title>Pay invoice · RecoverFlow</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>body{background:radial-gradient(800px 420px at 50% -10%,rgba(83,165,221,.18),transparent 65%),#07111f}</style>
+</head>
+<body class="min-h-screen text-slate-100 antialiased">
+<main class="min-h-screen grid place-items-center px-4 py-10">
+<div class="w-full max-w-lg">
+<div class="flex items-center justify-center gap-3 mb-8"><div class="h-10 w-10 rounded-xl bg-cyan-200 text-[#07111f] grid place-items-center font-black text-xl">↗</div><div class="font-black text-xl">RecoverFlow</div></div>
+<div class="rounded-3xl border border-white/10 bg-white/[.035] backdrop-blur-xl p-6 sm:p-8 shadow-2xl">
+<div class="text-[11px] tracking-[.2em] font-bold text-cyan-200">SECURE PAYMENT REQUEST</div>
+<h1 class="text-3xl font-black mt-3">{{company_name}}</h1>
+<p class="text-slate-500 mt-2">Invoice {{invoice.invoice_number}} · {{invoice.customer_name}}</p>
+<div class="my-7 p-5 rounded-2xl bg-[#081522] border border-white/5"><div class="text-xs text-slate-500">Amount due</div><div class="text-4xl font-black mt-1">{{money(invoice.balance)}}</div>{% if invoice.due_date %}<div class="text-xs text-slate-500 mt-2">Due {{invoice.due_date.strftime('%d %b %Y')}}</div>{% endif %}</div>
+{% if payment_link %}
+<a href="{{payment_link.short_url}}" class="block w-full text-center px-5 py-3.5 rounded-xl bg-white text-[#07111f] font-extrabold">Pay securely</a>
+<div class="text-center text-xs text-slate-600 mt-4">Payment is processed securely by Razorpay. Available payment methods depend on the merchant's enabled checkout configuration.</div>
+{% else %}
+<div class="rounded-xl border border-amber-300/10 bg-amber-300/5 p-4 text-sm text-amber-100">The payment link for this invoice has not been activated yet. Please contact {{company_name}}.</div>
+{% endif %}
+<div class="mt-7 pt-5 border-t border-white/5 text-center text-xs text-slate-600">Please verify the invoice number and amount before paying.</div>
+</div>
+</div>
+</main>
+</body>
+</html>
