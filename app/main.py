@@ -184,6 +184,48 @@ def api_team(request:Request,db:Session=Depends(get_db)):
     members=list(db.scalars(select(TeamMember).where(TeamMember.workspace_id==workspace.id,TeamMember.status=="active").order_by(TeamMember.created_at.asc())).all())
     return [{"id":m.id,"user_id":m.user_id,"email":db.get(User,m.user_id).email,"role":m.role,"status":m.status} for m in members]
 
+@app.post("/api/v1/team/invite")
+async def api_team_invite(request:Request,db:Session=Depends(get_db)):
+    user,workspace=api_require_role(request,db,"owner","admin")
+    try:data=await request.json()
+    except Exception: raise HTTPException(400,"Invalid JSON")
+    email=str(data.get("email","")).strip().lower(); role=str(data.get("role","viewer"))
+    if not email or role not in {"admin","finance","collector","viewer"}: raise HTTPException(400,"Invalid invite")
+    existing=db.scalar(select(User).where(func.lower(User.email)==email))
+    if existing and existing.workspace_id==workspace.id: raise HTTPException(409,"User is already in this workspace")
+    raw=secrets.token_urlsafe(32); inv=TeamInvite(workspace_id=workspace.id,email=email,role=role,token_digest=invite_digest(raw),status="pending")
+    db.add(inv); db.flush(); audit(db,user,"team.invite_created","team_invite",inv.id,{"email":email,"role":role}); db.commit()
+    return {"ok":True,"invite_url":str(request.base_url).rstrip("/")+"/invite/"+raw,"role":role}
+
+@app.get("/api/v1/recurring")
+def api_recurring(request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db); workspace=workspace_for(user,db)
+    items=list(db.scalars(select(RecurringInvoice).where(RecurringInvoice.workspace_id==workspace.id).order_by(RecurringInvoice.active.desc(),RecurringInvoice.next_issue_date.asc())).all())
+    return [{"id":r.id,"customer_name":r.customer_name,"phone":r.phone,"email":r.email,"amount":str(r.amount),"cadence":r.cadence,"next_issue_date":r.next_issue_date.isoformat(),"due_days":r.due_days,"active":r.active} for r in items]
+
+@app.post("/api/v1/recurring")
+async def api_create_recurring(request:Request,db:Session=Depends(get_db)):
+    user,workspace=api_require_role(request,db,"owner","admin","finance")
+    try:data=await request.json()
+    except Exception: raise HTTPException(400,"Invalid JSON")
+    cadence=str(data.get("cadence","monthly"))
+    if cadence not in {"weekly","monthly","quarterly","yearly"}: raise HTTPException(400,"Invalid cadence")
+    try: amount=Decimal(str(data["amount"])); next_date=date.fromisoformat(str(data["next_issue_date"])); due_days=int(data.get("due_days",7))
+    except (KeyError,InvalidOperation,ValueError): raise HTTPException(400,"Invalid recurring invoice values")
+    if amount<=0 or due_days<0: raise HTTPException(400,"Invalid recurring invoice values")
+    item=RecurringInvoice(workspace_id=workspace.id,created_by_user_id=user.id,customer_name=str(data.get("customer_name","")).strip(),phone=str(data.get("phone","")).strip() or None,email=str(data.get("email","")).strip() or None,amount=amount,cadence=cadence,next_issue_date=next_date,due_days=due_days,active=True)
+    if not item.customer_name: raise HTTPException(400,"Customer name is required")
+    db.add(item); db.flush(); audit(db,user,"recurring.created","recurring_invoice",item.id,{"customer_name":item.customer_name,"cadence":cadence}); db.commit()
+    return {"id":item.id,"active":item.active,"next_issue_date":item.next_issue_date.isoformat()}
+
+@app.post("/api/v1/recurring/{recurring_id}/toggle")
+def api_toggle_recurring(recurring_id:int,request:Request,db:Session=Depends(get_db)):
+    user,workspace=api_require_role(request,db,"owner","admin","finance")
+    item=db.scalar(select(RecurringInvoice).where(RecurringInvoice.id==recurring_id,RecurringInvoice.workspace_id==workspace.id))
+    if not item: raise HTTPException(404,"Recurring invoice not found")
+    item.active=not item.active; audit(db,user,"recurring.toggled","recurring_invoice",item.id,{"active":item.active}); db.commit()
+    return {"ok":True,"active":item.active}
+
 @app.get("/api/v1/invoices")
 def api_invoices(request:Request,db:Session=Depends(get_db)):
     user=api_user(request,db); workspace=workspace_for(user,db)
