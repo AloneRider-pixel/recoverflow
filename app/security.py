@@ -74,3 +74,16 @@ def read_public_invoice_token(token: str | None):
         return URLSafeTimedSerializer(settings.session_secret, salt="recoverflow-invoice").loads(token, max_age=PUBLIC_INVOICE_MAX_AGE)
     except (BadSignature, BadTimeSignature):
         return None
+
+STATEMENT_MAX_AGE = 60 * 60 * 24 * 90
+
+def make_statement_token(workspace_id: int, customer_name: str) -> str:
+    return URLSafeTimedSerializer(settings.session_secret, salt="recoverflow-statement").dumps({"workspace_id": workspace_id, "customer_name": customer_name})
+
+def read_statement_token(token: str | None):
+    if not token:
+        return None
+    try:
+        return URLSafeTimedSerializer(settings.session_secret, salt="recoverflow-statement").loads(token, max_age=STATEMENT_MAX_AGE)
+    except (BadSignature, BadTimeSignature):
+        return None
