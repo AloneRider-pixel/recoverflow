@@ -65,6 +65,35 @@ class Invoice(Base):
         d=self.days_overdue
         return "Current" if d<=0 else "1–7 days" if d<=7 else "8–30 days" if d<=30 else "30+ days"
 
+class PaymentTransaction(Base):
+    __tablename__ = "payment_transactions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id"), index=True)
+    razorpay_order_id: Mapped[str | None] = mapped_column(String(120), unique=True, index=True, nullable=True)
+    razorpay_payment_id: Mapped[str | None] = mapped_column(String(120), unique=True, index=True, nullable=True)
+    amount_paise: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(10), default="INR")
+    status: Mapped[str] = mapped_column(String(30), default="creating", index=True)
+    failure_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    captured_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+class WebhookEvent(Base):
+    __tablename__ = "webhook_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider_event_id: Mapped[str] = mapped_column(String(180), unique=True, index=True)
+    event: Mapped[str] = mapped_column(String(100), index=True)
+    status: Mapped[str] = mapped_column(String(30), default="received", index=True)
+    workspace_id: Mapped[int | None] = mapped_column(ForeignKey("workspaces.id"), nullable=True, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id"), nullable=True, index=True)
+    error_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
 class PaymentLink(Base):
     __tablename__ = "payment_links"
     id: Mapped[int] = mapped_column(primary_key=True)
