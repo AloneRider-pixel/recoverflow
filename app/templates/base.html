@@ -102,6 +102,7 @@
         {% if user.role in ['owner','admin'] %}
         <a href="/team" class="rf-nav-item {% if request.url.path.startswith('/team') or request.url.path.startswith('/invite') %}active{% endif %}"><span class="rf-nav-dot"></span>Team & access</a>
         <a href="/audit" class="rf-nav-item {% if request.url.path.startswith('/audit') %}active{% endif %}"><span class="rf-nav-dot"></span>Audit trail</a>
+        <a href="/leads" class="rf-nav-item {% if request.url.path.startswith('/leads') %}active{% endif %}"><span class="rf-nav-dot"></span>Demo requests</a>
         <a href="/billing" class="rf-nav-item {% if request.url.path.startswith('/billing') %}active{% endif %}"><span class="rf-nav-dot"></span>Billing</a>
         {% endif %}
         <a href="/settings" class="rf-nav-item {% if request.url.path.startswith('/settings') %}active{% endif %}"><span class="rf-nav-dot"></span>Settings</a>
@@ -174,7 +175,7 @@
   </div>
 </nav>
 <main>{% block content %}{% endblock %}</main>
-<footer class="max-w-7xl mx-auto px-4 sm:px-6 py-10 text-xs text-slate-700">RecoverFlow · Receivables operations for modern teams</footer>
+<footer class="max-w-7xl mx-auto px-4 sm:px-6 py-10 text-xs text-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"><span>RecoverFlow · Receivables operations</span><span class="flex gap-4"><a href="/request-demo" class="hover:text-slate-500">Book a demo</a><a href="/privacy" class="hover:text-slate-500">Privacy</a><a href="/terms" class="hover:text-slate-500">Terms</a><a href="/refunds" class="hover:text-slate-500">Refunds</a></span></footer>
 {% endif %}
 <script>
   const menu=document.getElementById('rfMenu'), sidebar=document.getElementById('rfSidebar');

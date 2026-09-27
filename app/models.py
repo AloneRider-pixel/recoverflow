@@ -148,3 +148,13 @@ class RecurringInvoice(Base):
     due_days: Mapped[int] = mapped_column(Integer, default=7)
     active: Mapped[bool] = mapped_column(default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+class Lead(Base):
+    __tablename__ = "leads"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    company_name: Mapped[str] = mapped_column(String(180))
+    email: Mapped[str] = mapped_column(String(180), index=True)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="new", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
