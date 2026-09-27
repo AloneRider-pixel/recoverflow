@@ -1,0 +1,9 @@
+{
+  "expo":{
+    "name":"RecoverFlow","slug":"recoverflow","version":"1.0.0","orientation":"portrait","userInterfaceStyle":"dark","scheme":"recoverflow",
+    "assetBundlePatterns":["**/*"],
+    "ios":{"supportsTablet":true,"bundleIdentifier":"com.recoverflow.app"},
+    "android":{"package":"com.recoverflow.app"},
+    "web":{"bundler":"metro"}
+  }
+}
