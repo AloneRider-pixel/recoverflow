@@ -106,13 +106,28 @@
       </div>
 
       {% if user.role in ['owner','admin','finance','collector'] %}
-      <details class="mt-5">
+      <details class="mt-4">
+        <summary class="cursor-pointer text-xs font-bold text-slate-500 hover:text-cyan-100">Analyze a customer reply</summary>
+        <div class="mt-3 rounded-2xl border border-cyan-200/8 bg-cyan-200/[.02] p-4">
+          <p class="text-[11px] leading-5 text-slate-600">Paste the customer's message. RecoverFlow will classify the likely outcome and extract a promise date/amount when possible. Nothing is saved or sent until the collector reviews it.</p>
+          <form class="reply-analyzer mt-3" data-invoice-id="{{i.id}}" data-csrf="{{csrf}}">
+            <textarea name="reply" rows="3" class="rf-input text-sm" placeholder="e.g. Payment Friday ko kar denge. Please keep the invoice open."></textarea>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <button class="rf-btn-secondary text-xs" type="submit">Analyze reply</button>
+              <span class="analyzer-status text-[11px] text-slate-600"></span>
+            </div>
+            <div class="analyzer-result mt-3 hidden rounded-xl border border-white/6 bg-black/10 p-3 text-xs"></div>
+          </form>
+        </div>
+      </details>
+
+      <details class="mt-4">
         <summary class="cursor-pointer text-xs font-bold text-slate-500 hover:text-cyan-100">Log collection activity</summary>
         <form method="post" action="/collections/{{i.id}}/event" class="mt-3 grid md:grid-cols-2 xl:grid-cols-6 gap-3 rounded-2xl border border-white/6 bg-black/10 p-4">
           <input type="hidden" name="csrf" value="{{csrf}}">
           <div class="xl:col-span-1">
             <label class="rf-label block mb-1.5">Event</label>
-            <select class="rf-input text-sm" name="event_type">
+            <select class="rf-input text-sm" id="event-type-{{i.id}}" name="event_type">
               <option value="contact">Contact attempt</option>
               <option value="promise">Promise to pay</option>
               <option value="dispute">Dispute / exception</option>
@@ -122,15 +137,15 @@
           </div>
           <div class="xl:col-span-2">
             <label class="rf-label block mb-1.5">Customer / internal note</label>
-            <input class="rf-input text-sm" name="body" placeholder="e.g. Customer says payment will land Friday">
+            <input class="rf-input text-sm" id="event-body-{{i.id}}" name="body" placeholder="e.g. Customer says payment will land Friday">
           </div>
           <div>
             <label class="rf-label block mb-1.5">Promise date</label>
-            <input class="rf-input text-sm" type="date" name="promised_date">
+            <input class="rf-input text-sm" type="date" id="promise-date-{{i.id}}" name="promised_date">
           </div>
           <div>
             <label class="rf-label block mb-1.5">Promise amount</label>
-            <input class="rf-input text-sm" type="number" step="0.01" min="0" name="promised_amount" value="{{'%.2f'|format(i.balance)}}">
+            <input class="rf-input text-sm" type="number" step="0.01" min="0" id="promise-amount-{{i.id}}" name="promised_amount" value="{{'%.2f'|format(i.balance)}}">
           </div>
           <div class="flex items-end">
             <button class="rf-btn-primary w-full text-xs">Save activity</button>
@@ -153,5 +168,45 @@
     <div class="rounded-2xl border border-white/6 bg-white/[.018] p-5"><div class="text-xs font-bold">2 · Act</div><p class="mt-2 text-[11px] leading-5 text-slate-600">Keep WhatsApp, payment links and the invoice record together so the team does not jump between spreadsheets and chat.</p></div>
     <div class="rounded-2xl border border-white/6 bg-white/[.018] p-5"><div class="text-xs font-bold">3 · Learn</div><p class="mt-2 text-[11px] leading-5 text-slate-600">Every contact, promise, dispute and payment claim becomes structured history for future collection intelligence.</p></div>
   </div>
+
+<script>
+document.querySelectorAll('.reply-analyzer').forEach(form=>{
+  form.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const status=form.querySelector('.analyzer-status');
+    const result=form.querySelector('.analyzer-result');
+    const reply=(form.querySelector('textarea[name="reply"]')||{}).value||'';
+    const invoiceId=form.dataset.invoiceId;
+    const csrf=form.dataset.csrf;
+    if(!reply.trim()){status.textContent='Paste the customer reply first.';return;}
+    status.textContent='Analyzing…';
+    result.classList.add('hidden');
+    try{
+      const body=new URLSearchParams({csrf,reply});
+      const res=await fetch('/collections/'+invoiceId+'/analyze',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+      const data=await res.json();
+      if(!res.ok || !data.ok) throw new Error(data.detail || 'Analysis failed');
+      const typeEl=document.getElementById('event-type-'+invoiceId);
+      const bodyEl=document.getElementById('event-body-'+invoiceId);
+      const dateEl=document.getElementById('promise-date-'+invoiceId);
+      const amountEl=document.getElementById('promise-amount-'+invoiceId);
+      if(typeEl) typeEl.value=data.event_type;
+      if(bodyEl && !bodyEl.value.trim()) bodyEl.value=reply.trim();
+      if(dateEl) dateEl.value=data.promised_date||'';
+      if(amountEl && data.promised_amount) amountEl.value=data.promised_amount;
+      result.innerHTML='<div class="font-bold text-cyan-100">Suggested outcome: '+data.event_type.replaceAll('_',' ')+'</div>'
+        +'<div class="mt-1 text-slate-500">'+(data.reason||'')+'</div>'
+        +'<div class="mt-2 text-[11px] text-slate-600">Confidence '+Math.round((data.confidence||0)*100)+'% · '+(data.source||'rules')+'</div>'
+        +(data.promised_date?'<div class="mt-2 text-emerald-100">Promise date: '+data.promised_date+'</div>':'')
+        +(data.promised_amount?'<div class="text-emerald-100">Promise amount: ₹'+Number(data.promised_amount).toLocaleString('en-IN')+'</div>':'')
+        +'<div class="mt-3 text-slate-500">Review the fields below, then click <b>Save activity</b> to record the event.</div>';
+      result.classList.remove('hidden');
+      status.textContent='Drafted into the activity form.';
+    }catch(err){
+      status.textContent=err.message||'Analysis failed.';
+    }
+  });
+});
+</script>
 </section>
 {% endblock %}
