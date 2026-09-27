@@ -894,17 +894,38 @@ def subscribe(request:Request,csrf:str=Form(...),plan_code:str=Form(...),db:Sess
     user,workspace=require_role(request,db,"owner","admin",subscription=False); check_csrf(request,csrf)
     if plan_code not in PLANS: raise HTTPException(400,"Unknown plan")
     if not settings.razorpay_platform_key_id or not settings.razorpay_platform_key_secret:
-        return RedirectResponse("/billing?message=Add+RAZORPAY_PLATFORM_KEY_ID+and+RAZORPAY_PLATFORM_KEY_SECRET+in+Render+Environment+first",303)
+        return RedirectResponse("/billing?message=RecoverFlow+subscription+billing+is+not+configured.+Add+dedicated+Razorpay+billing+credentials+in+Render+Environment.",303)
+
+    # Do not create another provider subscription when one already exists.
+    if user.subscription_id and user.subscription_status in {"created","authenticated","active","pending","halted"}:
+        try:
+            existing_sub=platform_request("GET",f"/subscriptions/{user.subscription_id}")
+            existing_status=existing_sub.get("status",user.subscription_status)
+            user.subscription_status=existing_status
+            db.commit()
+            if existing_sub.get("short_url"):
+                return RedirectResponse(existing_sub["short_url"],303)
+            if existing_status in {"active","authenticated"}:
+                return RedirectResponse("/billing?message=Your+subscription+is+already+active.",303)
+        except HTTPException:
+            if user.subscription_status in {"active","authenticated"}:
+                return RedirectResponse("/billing?message=Your+subscription+is+already+active.",303)
+
     meta=PLANS[plan_code]
     plan=db.get(BillingPlan,plan_code)
     if not plan:
         plan=BillingPlan(code=plan_code,name=meta["name"],amount_paise=meta["amount"],period="monthly",interval=1)
-        db.add(plan);db.commit()
+        db.add(plan); db.commit()
     if not plan.razorpay_plan_id:
         result=platform_request("POST","/plans",{"period":"monthly","interval":1,"item":{"name":meta["name"],"amount":meta["amount"],"currency":"INR","description":meta["description"]}})
-        plan.razorpay_plan_id=result["id"];db.commit()
+        plan.razorpay_plan_id=result["id"]; db.commit()
+
     result=platform_request("POST","/subscriptions",{"plan_id":plan.razorpay_plan_id,"total_count":120,"quantity":1,"customer_notify":1,"notes":{"recoverflow_user_id":str(user.id),"plan":plan_code}})
-    user.subscription_id=result.get("id");user.subscription_status=result.get("status","created");user.subscription_plan=plan_code; audit(db,user,"subscription.created","subscription",user.subscription_id,{"plan":plan_code}); db.commit()
+    user.subscription_id=result.get("id")
+    user.subscription_status=result.get("status","created")
+    user.subscription_plan=plan_code
+    audit(db,user,"subscription.created","subscription",user.subscription_id,{"plan":plan_code})
+    db.commit()
     short_url=result.get("short_url")
     if short_url: return RedirectResponse(short_url,303)
     return RedirectResponse("/billing?message=Subscription+created",303)
