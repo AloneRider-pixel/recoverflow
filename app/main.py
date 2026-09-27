@@ -469,6 +469,7 @@ def update_settings(request:Request,csrf:str=Form(...),company_name:str=Form(...
     user.whatsapp_phone_number_id=whatsapp_phone_number_id.strip() or user.whatsapp_phone_number_id
     user.whatsapp_template_name=whatsapp_template_name.strip() or user.whatsapp_template_name
     user.whatsapp_template_language=whatsapp_template_language.strip() or user.whatsapp_template_language
+    audit(db,user,"settings.updated","workspace",workspace.id)
     db.commit()
     return RedirectResponse("/settings?message=Settings+saved",303)
 
@@ -492,7 +493,7 @@ def subscribe(request:Request,csrf:str=Form(...),plan_code:str=Form(...),db:Sess
         result=platform_request("POST","/plans",{"period":"monthly","interval":1,"item":{"name":meta["name"],"amount":meta["amount"],"currency":"INR","description":meta["description"]}})
         plan.razorpay_plan_id=result["id"];db.commit()
     result=platform_request("POST","/subscriptions",{"plan_id":plan.razorpay_plan_id,"total_count":120,"quantity":1,"customer_notify":1,"notes":{"recoverflow_user_id":str(user.id),"plan":plan_code}})
-    user.subscription_id=result.get("id");user.subscription_status=result.get("status","created");user.subscription_plan=plan_code;db.commit()
+    user.subscription_id=result.get("id");user.subscription_status=result.get("status","created");user.subscription_plan=plan_code; audit(db,user,"subscription.created","subscription",user.subscription_id,{"plan":plan_code}); db.commit()
     short_url=result.get("short_url")
     if short_url: return RedirectResponse(short_url,303)
     return RedirectResponse("/billing?message=Subscription+created",303)
