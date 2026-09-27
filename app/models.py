@@ -131,6 +131,57 @@ class CollectionEvent(Base):
     promised_amount: Mapped[Decimal | None] = mapped_column(Numeric(14,2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
+class Customer(Base):
+    __tablename__ = "customers"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    name: Mapped[str] = mapped_column(String(180), index=True)
+    normalized_name: Mapped[str] = mapped_column(String(180), index=True)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    gstin: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    __table_args__ = (UniqueConstraint("workspace_id", "normalized_name", name="uq_customer_workspace_name"),)
+
+
+class CollectionCase(Base):
+    __tablename__ = "collection_cases"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id"), index=True)
+    customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)
+    priority: Mapped[str] = mapped_column(String(20), default="Low", index=True)
+    recovery_score: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    next_action_type: Mapped[str] = mapped_column(String(40), default="MONITOR", index=True)
+    next_action_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    assigned_to_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    promise_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    promise_amount: Mapped[Decimal | None] = mapped_column(Numeric(14,2), nullable=True)
+    last_action_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    __table_args__ = (UniqueConstraint("workspace_id", "invoice_id", name="uq_collection_case_workspace_invoice"),)
+
+
+class CollectionTask(Base):
+    __tablename__ = "collection_tasks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    case_id: Mapped[int] = mapped_column(ForeignKey("collection_cases.id"), index=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id"), index=True)
+    assigned_to_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    action_type: Mapped[str] = mapped_column(String(40), index=True)
+    title: Mapped[str] = mapped_column(String(220))
+    due_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)
+    outcome: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dedupe_key: Mapped[str] = mapped_column(String(220), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class DeviceToken(Base):
     __tablename__ = "device_tokens"
     id: Mapped[int] = mapped_column(primary_key=True)
