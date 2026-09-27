@@ -1,15 +1,16 @@
 from datetime import date, timedelta, datetime
 from decimal import Decimal, InvalidOperation
-import csv, io, json, urllib.parse, secrets, hashlib
+import csv, io, json, urllib.parse, secrets, hashlib, hmac
 from fastapi import FastAPI, Depends, Form, Request, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, func
+from sqlalchemy import select, func, inspect
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from openai import OpenAI
 from .config import settings
-from .db import get_db, init_db
-from .models import User, Invoice, PaymentLink, ReminderLog, BillingPlan, DeviceToken, Workspace, TeamMember, TeamInvite, AuditLog, RecurringInvoice, Lead
+from .db import get_db, init_db, engine
+from .models import User, Invoice, PaymentLink, PaymentTransaction, WebhookEvent, ReminderLog, BillingPlan, DeviceToken, Workspace, TeamMember, TeamInvite, AuditLog, RecurringInvoice, Lead
 from .security import set_session, clear_session, read_session, new_csrf, encrypt, decrypt, make_api_token, read_api_token, make_public_invoice_token, read_public_invoice_token, make_statement_token, read_statement_token, make_api_token, read_api_token
 from .password import hash_password, verify_password
 from .integrations import create_payment_link, send_whatsapp_template, verify_webhook, merchant_keys, webhook_secret, platform_request, send_expo_push, standard_checkout_keys, standard_checkout_client, create_standard_checkout_order
@@ -19,6 +20,16 @@ init_db()
 
 app=FastAPI(title=settings.app_name)
 templates=Jinja2Templates(directory="app/templates")
+
+@app.middleware("http")
+async def security_headers(request:Request, call_next):
+    response=await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options","nosniff")
+    response.headers.setdefault("X-Frame-Options","DENY")
+    response.headers.setdefault("Referrer-Policy","strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy","camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Strict-Transport-Security","max-age=31536000; includeSubDomains")
+    return response
 
 PLANS={
     "starter":{"name":"Starter","amount":99900,"description":"Core receivables and reminders"},
@@ -70,6 +81,57 @@ def ensure_limit(user,workspace,kind,db,incoming=1):
 
 def commercial_context(user):
     return {"subscription_state":subscription_state(user),"trial_days_left":trial_days_left(user),"subscription_plan":user.subscription_plan,"trial_ends_at":user.trial_ends_at}
+
+def credential_mode(key_id):
+    if key_id.startswith("rzp_live_"): return "live"
+    if key_id.startswith("rzp_test_"): return "test"
+    return "unknown" if key_id else "not_configured"
+
+def payment_security_context(user, request, db):
+    invoice_key_id, invoice_secret = standard_checkout_keys(user)
+    invoice_webhook_secret = decrypt(user.razorpay_webhook_secret_enc)
+    platform_key_id, platform_secret = platform_keys()
+    platform_webhook_secret = settings.razorpay_platform_webhook_secret
+    table_check = inspect(engine)
+    postgres_ok = engine.dialect.name == "postgresql"
+    idempotency_ok = table_check.has_table("payment_transactions")
+    replay_protection_ok = table_check.has_table("webhook_events")
+    forwarded_proto = request.headers.get("x-forwarded-proto","")
+    https_ok = forwarded_proto.split(",")[0].strip()=="https" or request.url.scheme=="https" or settings.public_base_url.startswith("https://")
+    session_ok = bool(settings.session_secret and settings.session_secret!="dev-only-change-me" and len(settings.session_secret)>=32)
+    legal_ok = all([
+        settings.legal_entity_name.strip(),
+        settings.support_email.strip(),
+        settings.business_address.strip(),
+        settings.jurisdiction.strip(),
+    ])
+    invoice_mode = credential_mode(invoice_key_id)
+    platform_mode = credential_mode(platform_key_id)
+    checks=[
+        ("Database", "PostgreSQL is active for production data.", "ready" if postgres_ok else "action"),
+        ("HTTPS", "Production traffic is protected by HTTPS.", "ready" if https_ok else "action"),
+        ("Session security", "Strong production session secret is configured.", "ready" if session_ok else "action"),
+        ("Invoice payments", f"Razorpay merchant credentials: {invoice_mode}.", "ready" if invoice_mode=="live" and bool(invoice_secret) else "action"),
+        ("Invoice webhooks", "Merchant webhook secret is configured for payment events.", "ready" if bool(invoice_webhook_secret) else "action"),
+        ("Payment idempotency", "Payment transaction records protect against duplicate processing.", "ready" if idempotency_ok else "action"),
+        ("Webhook replay protection", "Webhook event IDs are persisted and deduplicated.", "ready" if replay_protection_ok else "action"),
+        ("Subscription billing", f"RecoverFlow billing credentials: {platform_mode}.", "ready" if platform_mode=="live" and bool(platform_secret) else "action"),
+        ("Subscription webhooks", "Platform webhook secret is configured.", "ready" if bool(platform_webhook_secret) else "action"),
+        ("Automation", "Cron secret is configured for internal jobs.", "ready" if settings.cron_secret else "action"),
+        ("Legal identity", "Legal entity, support email, address and jurisdiction are configured.", "ready" if legal_ok else "action"),
+        ("WhatsApp", "Workspace WhatsApp integration is configured.", "ready" if decrypt(user.whatsapp_access_token_enc) and user.whatsapp_phone_number_id and settings.whatsapp_graph_version else "optional"),
+    ]
+    production_ready=all(state=="ready" for _,_,state in checks if state!="optional")
+    return {
+        "invoice_mode":invoice_mode,
+        "invoice_configured":bool(invoice_secret and invoice_key_id),
+        "invoice_webhook_configured":bool(invoice_webhook_secret),
+        "platform_mode":platform_mode,
+        "platform_configured":bool(platform_secret and platform_key_id),
+        "platform_webhook_configured":bool(platform_webhook_secret),
+        "production_ready":production_ready,
+        "checks":checks,
+    }
 
 def money(v): return f"₹{Decimal(v):,.2f}"
 
@@ -313,10 +375,23 @@ def api_payment_link(invoice_id:int,request:Request,db:Session=Depends(get_db)):
     user,workspace=api_require_role(request,db,"owner","admin","finance","collector")
     invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.workspace_id==workspace.id))
     if not invoice: raise HTTPException(404,"Invoice not found")
+    balance_paise=int(invoice.balance*100)
+    existing=db.scalar(
+        select(PaymentLink)
+        .where(
+            PaymentLink.invoice_id==invoice.id,
+            PaymentLink.owner_id==user.id,
+            PaymentLink.amount_paise==balance_paise,
+            PaymentLink.status.notin_(["paid","cancelled","expired"]),
+        )
+        .order_by(PaymentLink.created_at.desc())
+    )
+    if existing:
+        return {"ok":True,"url":existing.short_url,"status":existing.status,"reused":True}
     result=create_payment_link(user,invoice)
     link=PaymentLink(owner_id=user.id,invoice_id=invoice.id,provider_link_id=result["id"],short_url=result["short_url"],amount_paise=int(result["amount"]),status=result.get("status","created"))
     db.add(link); db.flush(); audit(db,user,"payment_link.created","payment_link",link.id,{"invoice_id":invoice.id}); db.commit()
-    return {"ok":True,"url":link.short_url,"status":link.status}
+    return {"ok":True,"url":link.short_url,"status":link.status,"reused":False}
 
 @app.post("/api/v1/invoices/{invoice_id}/whatsapp")
 def api_whatsapp(invoice_id:int,request:Request,db:Session=Depends(get_db)):
@@ -380,7 +455,11 @@ async def create_standard_checkout_order_api(request:Request,db:Session=Depends(
     if not payload or not payload.get("invoice_id"):
         raise HTTPException(404,"Payment page not found")
 
-    invoice=db.get(Invoice,int(payload["invoice_id"]))
+    invoice=db.scalar(
+        select(Invoice)
+        .where(Invoice.id==int(payload["invoice_id"]))
+        .with_for_update()
+    )
     if not invoice or invoice.balance<=0:
         raise HTTPException(404,"Payment page not found")
 
@@ -392,18 +471,55 @@ async def create_standard_checkout_order_api(request:Request,db:Session=Depends(
     if amount_paise < 100:
         raise HTTPException(400,"Razorpay Checkout requires an amount of at least ₹1.")
 
+    existing=db.scalar(
+        select(PaymentTransaction)
+        .where(
+            PaymentTransaction.invoice_id==invoice.id,
+            PaymentTransaction.owner_id==owner.id,
+            PaymentTransaction.amount_paise==amount_paise,
+            PaymentTransaction.status.in_([ "creating", "created", "verification_pending" ]),
+        )
+        .order_by(PaymentTransaction.created_at.desc())
+    )
+    if existing and existing.razorpay_order_id:
+        return {
+            "order_id":existing.razorpay_order_id,
+            "amount":existing.amount_paise,
+            "currency":existing.currency,
+            "key_id":standard_checkout_keys(owner)[0],
+        }
+    if existing and existing.status=="creating":
+        raise HTTPException(409,"A secure payment order is already being prepared. Please wait a moment and try again.")
+
+    tx=PaymentTransaction(
+        workspace_id=owner.workspace_id,
+        owner_id=owner.id,
+        invoice_id=invoice.id,
+        amount_paise=amount_paise,
+        currency="INR",
+        status="creating",
+    )
+    db.add(tx)
+    db.flush()
+
     try:
         result=create_standard_checkout_order(owner,invoice)
-    except HTTPException:
-        raise
+        order_id=str(result["id"])
+        tx.razorpay_order_id=order_id
+        tx.status="created"
+        db.commit()
+    except HTTPException as exc:
+        db.rollback()
+        raise exc
     except Exception as exc:
+        db.rollback()
         message=str(exc)
         if "authentication" in message.lower() or "unauthorized" in message.lower():
             raise HTTPException(401,"Razorpay authentication failed. Check the configured API credentials.")
-        raise HTTPException(500,f"Unable to create Razorpay order: {message}")
+        raise HTTPException(500,"Unable to create Razorpay payment order.")
 
     return {
-        "order_id":result["id"],
+        "order_id":order_id,
         "amount":int(result["amount"]),
         "currency":result["currency"],
         "key_id":standard_checkout_keys(owner)[0],
@@ -429,7 +545,7 @@ async def verify_standard_checkout_payment(request:Request,db:Session=Depends(ge
     if not payload or not payload.get("invoice_id"):
         raise HTTPException(404,"Payment page not found")
 
-    invoice=db.get(Invoice,int(payload["invoice_id"]))
+    invoice=db.scalar(select(Invoice).where(Invoice.id==int(payload["invoice_id"])))
     if not invoice:
         raise HTTPException(404,"Invoice not found")
 
@@ -437,49 +553,77 @@ async def verify_standard_checkout_payment(request:Request,db:Session=Depends(ge
     if not owner:
         raise HTTPException(404,"Payment owner not found")
 
+    tx=db.scalar(
+        select(PaymentTransaction).where(
+            PaymentTransaction.razorpay_order_id==order_id,
+            PaymentTransaction.invoice_id==invoice.id,
+            PaymentTransaction.owner_id==owner.id,
+        )
+    )
+    if not tx:
+        raise HTTPException(400,"Unknown checkout order. Start a new payment from the invoice page.")
+
     try:
         client,key_id,key_secret=standard_checkout_client(owner)
     except HTTPException:
         raise
-    except Exception as exc:
-        raise HTTPException(500,f"Unable to initialize Razorpay verification: {exc}")
+    except Exception:
+        raise HTTPException(500,"Unable to initialize Razorpay verification.")
 
-    import hmac
     generated_signature=hmac.new(
         key_secret.encode(),
         f"{order_id}|{payment_id}".encode(),
         hashlib.sha256,
     ).hexdigest()
-
     if not hmac.compare_digest(generated_signature,signature):
         raise HTTPException(400,"Payment signature verification failed")
 
-    expected_amount=int(invoice.balance*100)
+    if tx.status=="paid" and tx.razorpay_payment_id==payment_id:
+        return {
+            "success":True,
+            "invoice_id":invoice.id,
+            "invoice_number":invoice.invoice_number,
+            "payment_id":payment_id,
+            "order_id":order_id,
+            "idempotent":True,
+        }
 
     try:
         order=client.order.fetch(order_id)
         notes=order.get("notes") or {}
         if str(notes.get("recoverflow_invoice_id","")) != str(invoice.id):
             raise HTTPException(400,"Order does not belong to this invoice")
-        if int(order.get("amount",0)) != expected_amount:
-            raise HTTPException(400,"Order amount does not match the invoice")
+        if int(order.get("amount",0)) != tx.amount_paise or order.get("currency") != tx.currency:
+            raise HTTPException(400,"Order amount does not match the recorded transaction")
 
         payment=client.payment.fetch(payment_id)
         if payment.get("order_id") != order_id:
             raise HTTPException(400,"Payment does not belong to this order")
         if payment.get("status") != "captured":
             raise HTTPException(400,"Payment signature is valid, but the payment is not captured yet.")
+        if int(payment.get("amount",0)) != tx.amount_paise:
+            raise HTTPException(400,"Captured payment amount does not match the recorded transaction")
     except HTTPException:
         raise
     except Exception as exc:
         message=str(exc)
         if "authentication" in message.lower() or "unauthorized" in message.lower():
             raise HTTPException(401,"Razorpay authentication failed. Check the configured API credentials.")
-        raise HTTPException(500,f"Unable to confirm Razorpay payment: {message}")
+        raise HTTPException(502,"Unable to confirm Razorpay payment.")
 
-    invoice.paid_amount=invoice.amount
-    invoice.status="paid"
-    audit(db,owner,"invoice.paid_via_checkout","invoice",invoice.id,{"order_id":order_id,"payment_id":payment_id})
+    payment_amount=Decimal(tx.amount_paise)/Decimal(100)
+    remaining=invoice.amount-invoice.paid_amount
+    if remaining < Decimal("0"):
+        remaining=Decimal("0")
+    if tx.status!="paid":
+        if payment_amount > remaining:
+            raise HTTPException(409,"Invoice balance changed. This payment order can no longer be applied safely.")
+        invoice.paid_amount += payment_amount
+        invoice.status="paid" if invoice.paid_amount>=invoice.amount else "partially_paid"
+        tx.razorpay_payment_id=payment_id
+        tx.status="paid"
+        tx.captured_at=datetime.utcnow()
+        audit(db,owner,"invoice.paid_via_checkout","invoice",invoice.id,{"order_id":order_id,"payment_id":payment_id,"amount_paise":tx.amount_paise})
     db.commit()
 
     return {
@@ -488,6 +632,7 @@ async def verify_standard_checkout_payment(request:Request,db:Session=Depends(ge
         "invoice_number":invoice.invoice_number,
         "payment_id":payment_id,
         "order_id":order_id,
+        "idempotent":False,
     }
 
 @app.post("/api/v1/invoices/{invoice_id}/mark-paid")
@@ -507,15 +652,15 @@ def onboarding(request:Request,db:Session=Depends(get_db)):
 
 @app.get("/privacy",response_class=HTMLResponse)
 def privacy_page(request:Request):
-    return templates.TemplateResponse("legal.html",{"request":request,"page":"privacy","title":"Privacy Policy · RecoverFlow"})
+    return templates.TemplateResponse("legal.html",{"request":request,"page":"privacy","title":"Privacy Policy · RecoverFlow","legal_entity_name":settings.legal_entity_name,"support_email":settings.support_email,"business_address":settings.business_address,"jurisdiction":settings.jurisdiction})
 
 @app.get("/terms",response_class=HTMLResponse)
 def terms_page(request:Request):
-    return templates.TemplateResponse("legal.html",{"request":request,"page":"terms","title":"Terms of Service · RecoverFlow"})
+    return templates.TemplateResponse("legal.html",{"request":request,"page":"terms","title":"Terms of Service · RecoverFlow","legal_entity_name":settings.legal_entity_name,"support_email":settings.support_email,"business_address":settings.business_address,"jurisdiction":settings.jurisdiction})
 
 @app.get("/refunds",response_class=HTMLResponse)
 def refunds_page(request:Request):
-    return templates.TemplateResponse("legal.html",{"request":request,"page":"refunds","title":"Refund & Cancellation Policy · RecoverFlow"})
+    return templates.TemplateResponse("legal.html",{"request":request,"page":"refunds","title":"Refund & Cancellation Policy · RecoverFlow","legal_entity_name":settings.legal_entity_name,"support_email":settings.support_email,"business_address":settings.business_address,"jurisdiction":settings.jurisdiction})
 
 @app.get("/request-demo",response_class=HTMLResponse)
 def request_demo_page(request:Request):
@@ -538,18 +683,24 @@ def leads_page(request:Request,db:Session=Depends(get_db)):
 @app.get("/launch",response_class=HTMLResponse)
 def launch_page(request:Request,db:Session=Depends(get_db)):
     user,workspace=require_role(request,db,"owner","admin",subscription=False)
-    checks=[
-        ("Web service","Render service is deployed from main","ready"),
-        ("PostgreSQL","PostgreSQL database available","ready" if settings.database_url.startswith("postgresql") else "action"),
-        ("Session security","Production session secret configured","ready" if settings.session_secret and settings.session_secret!="dev-only-change-me" else "action"),
-        ("Subscription billing","Razorpay platform credentials configured","ready" if settings.razorpay_platform_key_id and settings.razorpay_platform_key_secret else "action"),
-        ("Automations","Cron secret configured","ready" if settings.cron_secret else "action"),
-        ("WhatsApp","Workspace WhatsApp credentials configured","ready" if decrypt(user.whatsapp_access_token_enc) and user.whatsapp_phone_number_id and settings.whatsapp_graph_version else "optional"),
-        ("Sales capture","Website demo-request pipeline active","ready"),
-        ("Legal","Replace placeholder legal-entity/support details before paid launch","action"),
-    ]
+    security=payment_security_context(user,request,db)
+    checks=security["checks"]
     leads_count=db.scalar(select(func.count(Lead.id))) or 0
-    return templates.TemplateResponse("launch.html",{"request":request,"user":user,"workspace":workspace,"checks":checks,"leads_count":leads_count,"sales_email":settings.sales_email,"public_base_url":settings.public_base_url or str(request.base_url).rstrip("/"),**commercial_context(user)})
+    return templates.TemplateResponse(
+        "launch.html",
+        {
+            "request":request,
+            "user":user,
+            "workspace":workspace,
+            "checks":checks,
+            "production_ready":security["production_ready"],
+            "payment_security":security,
+            "leads_count":leads_count,
+            "sales_email":settings.sales_email,
+            "public_base_url":settings.public_base_url or str(request.base_url).rstrip("/"),
+            **commercial_context(user),
+        },
+    )
 
 @app.get("/leads/export.csv")
 def export_leads(request:Request,db:Session=Depends(get_db)):
@@ -677,23 +828,19 @@ def payment(invoice_id:int,request:Request,csrf:str=Form(...),db:Session=Depends
     user,workspace=require_role(request,db,"owner","admin","finance","collector"); check_csrf(request,csrf)
     invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.workspace_id==workspace.id))
     if not invoice: raise HTTPException(404,"Invoice not found")
-
-    # Reuse the newest usable link for this invoice instead of creating a new
-    # Razorpay link on every click. This prevents duplicate links and API
-    # throttling when a user retries the same action.
+    balance_paise=int(invoice.balance*100)
     existing=db.scalar(
         select(PaymentLink)
         .where(
             PaymentLink.invoice_id==invoice.id,
             PaymentLink.owner_id==user.id,
-            PaymentLink.amount_paise==int(invoice.balance*100),
+            PaymentLink.amount_paise==balance_paise,
             PaymentLink.status.notin_(["paid","cancelled","expired"]),
         )
         .order_by(PaymentLink.created_at.desc())
     )
     if existing:
         return RedirectResponse(f"/invoices/{invoice.id}?message=Payment+link+ready",303)
-
     result=create_payment_link(user,invoice)
     link=PaymentLink(owner_id=user.id,invoice_id=invoice.id,provider_link_id=result["id"],short_url=result["short_url"],amount_paise=int(result["amount"]),status=result.get("status","created"))
     db.add(link); audit(db,user,"payment_link.created","payment_link",link.id,{"invoice_id":invoice.id}); db.commit()
@@ -740,7 +887,7 @@ def update_settings(request:Request,csrf:str=Form(...),company_name:str=Form(...
 @app.get("/billing",response_class=HTMLResponse)
 def billing(request:Request,db:Session=Depends(get_db)):
     user,workspace=require_role(request,db,"owner","admin",subscription=False)
-    return templates.TemplateResponse("billing.html",{"request":request,"user":user,"csrf":csrf_for(request),"plans":PLANS,"plan_limits":PLAN_LIMITS,"message":request.query_params.get("message",""),"subscription_url":request.query_params.get("subscription_url",""),**commercial_context(user)})
+    return templates.TemplateResponse("billing.html",{"request":request,"user":user,"csrf":csrf_for(request),"plans":PLANS,"plan_limits":PLAN_LIMITS,"message":request.query_params.get("message",""),"subscription_url":request.query_params.get("subscription_url",""),"payment_security":payment_security_context(user,request,db),**commercial_context(user)})
 
 @app.post("/billing/subscribe")
 def subscribe(request:Request,csrf:str=Form(...),plan_code:str=Form(...),db:Session=Depends(get_db)):
@@ -765,36 +912,174 @@ def subscribe(request:Request,csrf:str=Form(...),plan_code:str=Form(...),db:Sess
 @app.post("/webhooks/razorpay")
 async def razorpay_webhook(request:Request,db:Session=Depends(get_db)):
     raw=await request.body()
-    try: payload=json.loads(raw)
-    except json.JSONDecodeError: raise HTTPException(400,"Invalid JSON")
-    event=payload.get("event","")
-    if event.startswith("payment_link."):
+    signature=request.headers.get("x-razorpay-signature","")
+    event_id=request.headers.get("x-razorpay-event-id","").strip() or hashlib.sha256(raw).hexdigest()
+
+    try:
+        payload=json.loads(raw)
+    except json.JSONDecodeError:
+        raise HTTPException(400,"Invalid JSON")
+
+    event_name=str(payload.get("event","")).strip()
+    if not event_name:
+        raise HTTPException(400,"Missing webhook event")
+
+    # Resolve the correct merchant secret before accepting the event.
+    user=None
+    workspace_id=None
+    invoice_id=None
+    if event_name.startswith("payment_link."):
         entity=((payload.get("payload") or {}).get("payment_link") or {}).get("entity") or {}
         notes=entity.get("notes") or {}
         user_id=int(notes.get("recoverflow_user_id",0) or 0)
         invoice_id=int(notes.get("recoverflow_invoice_id",0) or 0)
         user=db.get(User,user_id)
-        if not user or not verify_webhook(raw,request.headers.get("x-razorpay-signature"),webhook_secret(user)):
-            raise HTTPException(401,"Invalid webhook signature")
-        invoice=db.get(Invoice,invoice_id)
-        if invoice and invoice.owner_id==user.id:
-            paid_paise=int(entity.get("amount_paid",0) or 0)
-            invoice.paid_amount=Decimal(paid_paise)/Decimal(100)
-            invoice.status="paid" if invoice.paid_amount>=invoice.amount else "partially_paid"
-            link=db.scalar(select(PaymentLink).where(PaymentLink.provider_link_id==entity.get("id")))
-            if link: link.status=entity.get("status","updated")
-            db.commit()
-        return JSONResponse({"ok":True})
-    if event.startswith("subscription."):
+        secret=webhook_secret(user) if user else ""
+    elif event_name.startswith("subscription."):
         entity=((payload.get("payload") or {}).get("subscription") or {}).get("entity") or {}
-        sub_id=entity.get("id")
-        user=db.scalar(select(User).where(User.subscription_id==sub_id))
+        user=db.scalar(select(User).where(User.subscription_id==entity.get("id")))
         secret=settings.razorpay_platform_webhook_secret
-        if not user or not verify_webhook(raw,request.headers.get("x-razorpay-signature"),secret):
-            raise HTTPException(401,"Invalid webhook signature")
-        user.subscription_status=entity.get("status",user.subscription_status);db.commit()
-        return JSONResponse({"ok":True})
-    return JSONResponse({"ok":True,"ignored":True})
+    elif event_name.startswith("payment.") or event_name=="order.paid":
+        payment_entity=((payload.get("payload") or {}).get("payment") or {}).get("entity") or {}
+        order_entity=((payload.get("payload") or {}).get("order") or {}).get("entity") or {}
+        order_id=str(payment_entity.get("order_id") or order_entity.get("id") or "")
+        tx=db.scalar(select(PaymentTransaction).where(PaymentTransaction.razorpay_order_id==order_id)) if order_id else None
+        user=db.get(User,tx.owner_id) if tx else None
+        secret=webhook_secret(user) if user else ""
+        invoice_id=tx.invoice_id if tx else None
+    else:
+        return JSONResponse({"ok":True,"ignored":True})
+
+    if not secret or not verify_webhook(raw,signature,secret):
+        raise HTTPException(401,"Invalid webhook signature")
+
+    try:
+        with db.begin_nested():
+            existing=db.scalar(select(WebhookEvent).where(WebhookEvent.provider_event_id==event_id))
+            if existing:
+                if existing.status in {"processed","ignored","received"}:
+                    return JSONResponse({"ok":True,"duplicate":True})
+            else:
+                existing=WebhookEvent(
+                    provider_event_id=event_id,
+                    event=event_name,
+                    status="received",
+                    workspace_id=user.workspace_id if user else workspace_id,
+                    user_id=user.id if user else None,
+                    invoice_id=invoice_id,
+                )
+                db.add(existing)
+                db.flush()
+    except IntegrityError:
+        existing=db.scalar(select(WebhookEvent).where(WebhookEvent.provider_event_id==event_id))
+        if existing and existing.status in {"processed","ignored","received"}:
+            return JSONResponse({"ok":True,"duplicate":True})
+        raise HTTPException(409,"Webhook is already being processed")
+
+    try:
+        if event_name.startswith("payment_link."):
+            entity=((payload.get("payload") or {}).get("payment_link") or {}).get("entity") or {}
+            invoice=db.get(Invoice,invoice_id) if invoice_id else None
+            if user and invoice and invoice.owner_id==user.id:
+                link=db.scalar(select(PaymentLink).where(
+                    PaymentLink.provider_link_id==entity.get("id"),
+                    PaymentLink.owner_id==user.id,
+                ))
+                if link:
+                    link.status=entity.get("status",link.status)
+
+                payments=entity.get("payments") or []
+                for payment_item in payments:
+                    payment_id=str(payment_item.get("payment_id") or "")
+                    amount_paise=int(payment_item.get("amount") or 0)
+                    payment_status=str(payment_item.get("status") or "")
+                    if not payment_id or payment_status!="captured" or amount_paise<=0:
+                        continue
+                    prior=db.scalar(select(PaymentTransaction).where(PaymentTransaction.razorpay_payment_id==payment_id))
+                    if prior:
+                        continue
+                    remaining=invoice.amount-invoice.paid_amount
+                    if remaining<=0 or Decimal(amount_paise)>remaining*Decimal(100):
+                        continue
+                    tx=PaymentTransaction(
+                        workspace_id=invoice.workspace_id,
+                        owner_id=user.id,
+                        invoice_id=invoice.id,
+                        razorpay_payment_id=payment_id,
+                        amount_paise=amount_paise,
+                        currency=str(entity.get("currency") or "INR"),
+                        status="paid",
+                        captured_at=datetime.utcnow(),
+                    )
+                    db.add(tx)
+                    invoice.paid_amount += Decimal(amount_paise)/Decimal(100)
+                if invoice.paid_amount>=invoice.amount:
+                    invoice.paid_amount=invoice.amount
+                    invoice.status="paid"
+                elif invoice.paid_amount>0:
+                    invoice.status="partially_paid"
+
+        elif event_name.startswith("subscription."):
+            entity=((payload.get("payload") or {}).get("subscription") or {}).get("entity") or {}
+            if user:
+                user.subscription_status=entity.get("status",user.subscription_status)
+
+        elif event_name.startswith("payment.") or event_name=="order.paid":
+            payment_entity=((payload.get("payload") or {}).get("payment") or {}).get("entity") or {}
+            order_entity=((payload.get("payload") or {}).get("order") or {}).get("entity") or {}
+            order_id=str(payment_entity.get("order_id") or order_entity.get("id") or "")
+            tx=db.scalar(select(PaymentTransaction).where(PaymentTransaction.razorpay_order_id==order_id)) if order_id else None
+            if tx:
+                if event_name=="payment.failed":
+                    tx.status="failed"
+                    error=payment_entity.get("error_description") or payment_entity.get("error_reason") or "Payment failed"
+                    tx.failure_code=payment_entity.get("error_code")
+                    tx.failure_reason=str(error)[:500]
+                elif event_name=="payment.captured" or event_name=="order.paid":
+                    amount_paise=int(payment_entity.get("amount") or order_entity.get("amount_paid") or 0)
+                    payment_id=str(payment_entity.get("id") or "")
+                    if amount_paise != tx.amount_paise:
+                        raise HTTPException(400,"Webhook payment amount does not match the recorded transaction")
+                    if payment_id:
+                        prior=db.scalar(select(PaymentTransaction).where(
+                            PaymentTransaction.razorpay_payment_id==payment_id,
+                            PaymentTransaction.id!=tx.id,
+                        ))
+                        if prior:
+                            raise HTTPException(409,"Payment ID is already associated with another transaction")
+                    if tx.status!="paid":
+                        invoice=db.get(Invoice,tx.invoice_id)
+                        remaining=invoice.amount-invoice.paid_amount
+                        if remaining<Decimal("0"): remaining=Decimal("0")
+                        if Decimal(amount_paise)>remaining*Decimal(100):
+                            raise HTTPException(409,"Captured payment would exceed the remaining invoice balance")
+                        invoice.paid_amount += Decimal(amount_paise)/Decimal(100)
+                        invoice.status="paid" if invoice.paid_amount>=invoice.amount else "partially_paid"
+                        tx.razorpay_payment_id=payment_id or tx.razorpay_payment_id
+                        tx.status="paid"
+                        tx.captured_at=datetime.utcnow()
+
+        existing.status="processed"
+        existing.processed_at=datetime.utcnow()
+        db.commit()
+    except HTTPException as exc:
+        db.rollback()
+        failed=db.scalar(select(WebhookEvent).where(WebhookEvent.provider_event_id==event_id))
+        if failed:
+            failed.status="failed"
+            failed.error_text=str(exc.detail)[:1000]
+            db.commit()
+        raise exc
+    except Exception as exc:
+        db.rollback()
+        failed=db.scalar(select(WebhookEvent).where(WebhookEvent.provider_event_id==event_id))
+        if failed:
+            failed.status="failed"
+            failed.error_text=str(exc)[:1000]
+            db.commit()
+        raise HTTPException(500,"Webhook processing failed")
+
+    return JSONResponse({"ok":True})
 
 @app.post("/internal/reminders")
 def internal_reminders(request:Request,db:Session=Depends(get_db)):
