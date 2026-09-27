@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from decimal import Decimal, InvalidOperation
 import csv, io, json, urllib.parse, secrets, hashlib
 from fastapi import FastAPI, Depends, Form, Request, UploadFile, File, HTTPException
@@ -25,6 +25,51 @@ PLANS={
     "business":{"name":"Business","amount":249900,"description":"Automation for growing teams"},
     "pro":{"name":"Pro","amount":499900,"description":"Advanced collection operations"},
 }
+
+PLAN_LIMITS={
+    "starter":{"invoices":100,"members":1,"recurring":10},
+    "business":{"invoices":2000,"members":5,"recurring":100},
+    "pro":{"invoices":10000,"members":25,"recurring":1000},
+}
+TRIAL_DAYS=14
+
+def subscription_state(user):
+    if user.subscription_status in {"active","authenticated"}:
+        return "active"
+    if user.trial_ends_at and datetime.utcnow() < user.trial_ends_at:
+        return "trial"
+    return "expired"
+
+def trial_days_left(user):
+    if not user.trial_ends_at:
+        return 0
+    return max((user.trial_ends_at.date()-date.today()).days,0)
+
+def access_plan(user):
+    if subscription_state(user)=="active" and user.subscription_plan in PLAN_LIMITS:
+        return user.subscription_plan
+    return "business"
+
+def ensure_access(user):
+    if subscription_state(user)=="expired":
+        raise HTTPException(402,"Your RecoverFlow trial has ended. Choose a plan in Billing to continue.")
+
+def ensure_limit(user,workspace,kind,db,incoming=1):
+    ensure_access(user)
+    limit=PLAN_LIMITS[access_plan(user)].get(kind)
+    if kind=="invoices":
+        used=db.scalar(select(func.count(Invoice.id)).where(Invoice.workspace_id==workspace.id)) or 0
+    elif kind=="members":
+        used=db.scalar(select(func.count(TeamMember.id)).where(TeamMember.workspace_id==workspace.id,TeamMember.status=="active")) or 0
+    elif kind=="recurring":
+        used=db.scalar(select(func.count(RecurringInvoice.id)).where(RecurringInvoice.workspace_id==workspace.id)) or 0
+    else:
+        return
+    if limit is not None and used+incoming>limit:
+        raise HTTPException(402,f"{PLANS[access_plan(user)]['name']} plan limit reached for {kind}. Upgrade in Billing to continue.")
+
+def commercial_context(user):
+    return {"subscription_state":subscription_state(user),"trial_days_left":trial_days_left(user),"subscription_plan":user.subscription_plan,"trial_ends_at":user.trial_ends_at}
 
 def money(v): return f"₹{Decimal(v):,.2f}"
 
@@ -81,15 +126,18 @@ def workspace_for(user,db):
     db.add(TeamMember(workspace_id=workspace.id,user_id=user.id,role="owner",status="active"))
     return workspace
 
-def require_role(request,db,*allowed):
+def require_role(request,db,*allowed,subscription=True):
     user=session_user(request,db)
     if not user: raise HTTPException(status_code=303,headers={"Location":"/login"})
     if user.role not in allowed: raise HTTPException(403,"Your role does not have access to this action.")
+    if subscription and subscription_state(user)=="expired":
+        raise HTTPException(status_code=303,headers={"Location":"/billing?message=Your+14-day+trial+has+ended.+Choose+a+plan+to+continue."})
     return user,workspace_for(user,db)
 
-def api_require_role(request,db,*allowed):
+def api_require_role(request,db,*allowed,subscription=True):
     user=api_user(request,db)
     if user.role not in allowed: raise HTTPException(403,"Your role does not have access to this action.")
+    if subscription: ensure_access(user)
     return user,workspace_for(user,db)
 
 def audit(db,user,event,entity_type=None,entity_id=None,metadata=None):
@@ -148,7 +196,7 @@ async def api_register(request:Request,db:Session=Depends(get_db)):
     if not email or not password: raise HTTPException(400,"Email and password are required")
     if len(password)<8: raise HTTPException(400,"Password must be at least 8 characters")
     if db.scalar(select(User).where(func.lower(User.email)==email)): raise HTTPException(409,"Email already registered")
-    user=User(email=email,password_hash=hash_password(password),company_name=company_name,role="owner")
+    user=User(email=email,password_hash=hash_password(password),company_name=company_name,role="owner",subscription_status="trial",trial_started_at=datetime.utcnow(),trial_ends_at=datetime.utcnow()+timedelta(days=TRIAL_DAYS))
     db.add(user); db.flush()
     workspace=Workspace(name=company_name); db.add(workspace); db.flush()
     user.workspace_id=workspace.id; db.add(TeamMember(workspace_id=workspace.id,user_id=user.id,role="owner",status="active"))
@@ -158,7 +206,7 @@ async def api_register(request:Request,db:Session=Depends(get_db)):
 @app.get("/api/v1/me")
 def api_me(request:Request,db:Session=Depends(get_db)):
     user=api_user(request,db); workspace=workspace_for(user,db); db.commit()
-    return {"id":user.id,"email":user.email,"company_name":user.company_name,"workspace_id":workspace.id,"role":user.role,"subscription_status":user.subscription_status,"subscription_plan":user.subscription_plan}
+    return {"id":user.id,"email":user.email,"company_name":user.company_name,"workspace_id":workspace.id,"role":user.role,"subscription_status":user.subscription_status,"subscription_plan":user.subscription_plan,"subscription_state":subscription_state(user),"trial_days_left":trial_days_left(user)}
 
 @app.get("/api/v1/dashboard")
 def api_dashboard(request:Request,db:Session=Depends(get_db)):
@@ -189,6 +237,7 @@ async def api_team_invite(request:Request,db:Session=Depends(get_db)):
     user,workspace=api_require_role(request,db,"owner","admin")
     try:data=await request.json()
     except Exception: raise HTTPException(400,"Invalid JSON")
+    ensure_limit(user,workspace,"members",db)
     email=str(data.get("email","")).strip().lower(); role=str(data.get("role","viewer"))
     if not email or role not in {"admin","finance","collector","viewer"}: raise HTTPException(400,"Invalid invite")
     existing=db.scalar(select(User).where(func.lower(User.email)==email))
@@ -210,6 +259,7 @@ async def api_create_recurring(request:Request,db:Session=Depends(get_db)):
     except Exception: raise HTTPException(400,"Invalid JSON")
     cadence=str(data.get("cadence","monthly"))
     if cadence not in {"weekly","monthly","quarterly","yearly"}: raise HTTPException(400,"Invalid cadence")
+    ensure_limit(user,workspace,"recurring",db)
     try: amount=Decimal(str(data["amount"])); next_date=date.fromisoformat(str(data["next_issue_date"])); due_days=int(data.get("due_days",7))
     except (KeyError,InvalidOperation,ValueError): raise HTTPException(400,"Invalid recurring invoice values")
     if amount<=0 or due_days<0: raise HTTPException(400,"Invalid recurring invoice values")
@@ -237,6 +287,7 @@ async def api_create_invoice(request:Request,db:Session=Depends(get_db)):
     user,workspace=api_require_role(request,db,"owner","admin","finance","collector")
     try: data=await request.json()
     except Exception: raise HTTPException(400,"Invalid JSON")
+    ensure_limit(user,workspace,"invoices",db)
     required=["invoice_number","customer_name","amount","issue_date","due_date"]; missing=[k for k in required if not str(data.get(k,"")).strip()]
     if missing: raise HTTPException(400,"Missing fields: "+", ".join(missing))
     try:
@@ -316,6 +367,41 @@ def api_mark_paid(invoice_id:int,request:Request,db:Session=Depends(get_db)):
     send_expo_push([t.token for t in tokens],"Payment received","Invoice "+invoice.invoice_number+" is marked paid.",{"screen":"invoices","invoiceId":invoice.id})
     return {"ok":True,"id":invoice.id,"status":invoice.status}
 
+@app.get("/onboarding",response_class=HTMLResponse)
+def onboarding(request:Request,db:Session=Depends(get_db)):
+    user,workspace=require_role(request,db,"owner","admin","finance","collector","viewer",subscription=False)
+    return templates.TemplateResponse("onboarding.html",{"request":request,"user":user,"workspace":workspace,"csrf":csrf_for(request),**commercial_context(user)})
+
+@app.get("/privacy",response_class=HTMLResponse)
+def privacy_page(request:Request):
+    return templates.TemplateResponse("legal.html",{"request":request,"page":"privacy","title":"Privacy Policy · RecoverFlow"})
+
+@app.get("/terms",response_class=HTMLResponse)
+def terms_page(request:Request):
+    return templates.TemplateResponse("legal.html",{"request":request,"page":"terms","title":"Terms of Service · RecoverFlow"})
+
+@app.get("/refunds",response_class=HTMLResponse)
+def refunds_page(request:Request):
+    return templates.TemplateResponse("legal.html",{"request":request,"page":"refunds","title":"Refund & Cancellation Policy · RecoverFlow"})
+
+@app.get("/request-demo",response_class=HTMLResponse)
+def request_demo_page(request:Request):
+    return templates.TemplateResponse("request_demo.html",{"request":request,"error":request.query_params.get("error",""),"sent":request.query_params.get("sent","")})
+
+@app.post("/request-demo")
+def request_demo(name:str=Form(...),company_name:str=Form(...),email:str=Form(...),phone:str=Form(""),message:str=Form(""),db:Session=Depends(get_db)):
+    name=name.strip(); company_name=company_name.strip(); email=email.strip().lower(); phone=phone.strip() or None; message=message.strip() or None
+    if not name or not company_name or not email:
+        return RedirectResponse("/request-demo?error=Please+complete+the+required+fields",303)
+    db.add(Lead(name=name,company_name=company_name,email=email,phone=phone,message=message,status="new")); db.commit()
+    return RedirectResponse("/request-demo?sent=1",303)
+
+@app.get("/leads",response_class=HTMLResponse)
+def leads_page(request:Request,db:Session=Depends(get_db)):
+    user,workspace=require_role(request,db,"owner","admin",subscription=False)
+    leads=list(db.scalars(select(Lead).order_by(Lead.created_at.desc()).limit(200)).all())
+    return templates.TemplateResponse("leads.html",{"request":request,"user":user,"leads":leads,**commercial_context(user)})
+
 @app.get("/login",response_class=HTMLResponse)
 def login_page(request:Request):
     return templates.TemplateResponse("login.html",{"request":request,"error":request.query_params.get("error","")})
@@ -338,14 +424,12 @@ def register(request:Request,email:str=Form(...),password:str=Form(...),company_
     email=email.strip().lower(); company_name=company_name.strip() or "My Business"
     if len(password)<8: return RedirectResponse("/register?error=Password+must+be+at+least+8+characters",303)
     if db.scalar(select(User).where(func.lower(User.email)==email)): return RedirectResponse("/register?error=Email+already+registered",303)
-    user=User(email=email,password_hash=hash_password(password),company_name=company_name,role="owner")
+    user=User(email=email,password_hash=hash_password(password),company_name=company_name,role="owner",subscription_status="trial",trial_started_at=datetime.utcnow(),trial_ends_at=datetime.utcnow()+timedelta(days=TRIAL_DAYS))
     db.add(user); db.flush()
     workspace=Workspace(name=company_name); db.add(workspace); db.flush()
     user.workspace_id=workspace.id; db.add(TeamMember(workspace_id=workspace.id,user_id=user.id,role="owner",status="active"))
     audit(db,user,"workspace.created","workspace",workspace.id,{"company_name":company_name}); db.commit()
-    response=RedirectResponse("/",303); set_session(response,user.id); return response
-
-@app.post("/logout")
+    response=RedirectResponse("/onboarding",303); set_session(response,user.id); return response
 def logout():
     response=RedirectResponse("/login",303); clear_session(response); return response
 
@@ -364,7 +448,7 @@ def dashboard(request:Request,db:Session=Depends(get_db)):
     customers=len({i.customer_name for i in invoices}); invoiced=sum((i.amount for i in invoices),Decimal("0")); paid=sum((i.paid_amount for i in invoices),Decimal("0"))
     collection_rate=(paid/invoiced*Decimal("100")) if invoiced else Decimal("0")
     aging={bucket:sum((i.balance for i in invoices if i.aging_bucket==bucket),Decimal("0")) for bucket in ["Current","1–7 days","8–30 days","30+ days"]}
-    return templates.TemplateResponse("dashboard.html",{"request":request,"user":user,"csrf":csrf_for(request),"invoices":invoices,"outstanding":outstanding,"overdue":overdue,"due_today":due_today,"customers":customers,"money":money,"collection_rate":collection_rate,"aging":aging,"paid":paid,"invoiced":invoiced,"demo_added":request.query_params.get("demo_added"),"message":request.query_params.get("message")})
+    return templates.TemplateResponse("dashboard.html",{"request":request,"user":user,"csrf":csrf_for(request),"invoices":invoices,"outstanding":outstanding,"overdue":overdue,"due_today":due_today,"customers":customers,"money":money,"collection_rate":collection_rate,"aging":aging,"paid":paid,"invoiced":invoiced,"demo_added":request.query_params.get("demo_added"),"message":request.query_params.get("message"),**commercial_context(user)})
 
 @app.post("/demo/seed")
 def seed_demo(request:Request,csrf:str=Form(...),db:Session=Depends(get_db)):
@@ -389,11 +473,11 @@ def seed_demo(request:Request,csrf:str=Form(...),db:Session=Depends(get_db)):
 @app.get("/invoices/new",response_class=HTMLResponse)
 def new_invoice(request:Request,db:Session=Depends(get_db)):
     user,workspace=require_role(request,db,"owner","admin","finance","collector")
-    return templates.TemplateResponse("invoice_form.html",{"request":request,"user":user,"csrf":csrf_for(request),"today":date.today()})
+    return templates.TemplateResponse("invoice_form.html",{"request":request,"user":user,"csrf":csrf_for(request),"today":date.today(),**commercial_context(user)})
 
 @app.post("/invoices/new")
 def create_invoice(request:Request,csrf:str=Form(...),invoice_number:str=Form(...),customer_name:str=Form(...),phone:str=Form(""),email:str=Form(""),amount:str=Form(...),paid_amount:str=Form("0"),issue_date:str=Form(...),due_date:str=Form(...),db:Session=Depends(get_db)):
-    user=require_user(request,db); check_csrf(request,csrf)
+    user,workspace=require_role(request,db,"owner","admin","finance","collector"); check_csrf(request,csrf); ensure_limit(user,workspace,"invoices",db)
     try: amount_d,paid_d=Decimal(amount),Decimal(paid_amount)
     except InvalidOperation: raise HTTPException(400,"Invalid amount")
     if amount_d<=0 or paid_d<0 or paid_d>amount_d: raise HTTPException(400,"Invalid payment values")
@@ -408,7 +492,9 @@ async def import_csv(request:Request,csrf:str=Form(...),file:UploadFile=File(...
     reader=csv.DictReader(io.StringIO((await file.read()).decode("utf-8-sig")))
     req={"invoice_number","customer_name","amount","issue_date","due_date"}
     if not req.issubset(set(reader.fieldnames or [])): raise HTTPException(400,"CSV missing required columns")
-    for row in reader:
+    rows=list(reader)
+    ensure_limit(user,workspace,"invoices",db,len(rows))
+    for row in rows:
         num=row["invoice_number"].strip()
         if db.scalar(select(Invoice).where(Invoice.invoice_number==num)): continue
         paid=Decimal((row.get("paid_amount") or "0").strip()); amount=Decimal(row["amount"].strip())
@@ -425,7 +511,7 @@ def invoice_detail(request:Request,invoice_id:int,tone:str="friendly",db:Session
     digits="".join(ch for ch in (invoice.phone or "") if ch.isdigit())
     wa=f"https://wa.me/{digits}?text={urllib.parse.quote(msg)}" if digits else None
     pay_url=str(request.base_url).rstrip("/")+"/pay/"+make_public_invoice_token(invoice.id)
-    return templates.TemplateResponse("invoice_detail.html",{"request":request,"user":user,"csrf":csrf_for(request),"invoice":invoice,"message":msg,"tone":tone,"wa_url":wa,"money":money,"payment_link":latest,"pay_url":pay_url})
+    return templates.TemplateResponse("invoice_detail.html",{"request":request,"user":user,"csrf":csrf_for(request),"invoice":invoice,"message":msg,"tone":tone,"wa_url":wa,"money":money,"payment_link":latest,"pay_url":pay_url,**commercial_context(user)})
 
 @app.post("/invoices/{invoice_id}/payment")
 def payment(invoice_id:int,request:Request,csrf:str=Form(...),db:Session=Depends(get_db)):
@@ -457,8 +543,8 @@ def mark_paid(invoice_id:int,request:Request,csrf:str=Form(...),db:Session=Depen
 
 @app.get("/settings",response_class=HTMLResponse)
 def settings_page(request:Request,db:Session=Depends(get_db)):
-    user,workspace=require_role(request,db,"owner","admin")
-    return templates.TemplateResponse("settings.html",{"request":request,"user":user,"csrf":csrf_for(request),"rzp_configured":bool(decrypt(user.razorpay_key_id_enc) and decrypt(user.razorpay_key_secret_enc)),"wa_configured":bool(decrypt(user.whatsapp_access_token_enc) and user.whatsapp_phone_number_id),"wa_version":settings.whatsapp_graph_version})
+    user,workspace=require_role(request,db,"owner","admin",subscription=False)
+    return templates.TemplateResponse("settings.html",{"request":request,"user":user,"csrf":csrf_for(request),"rzp_configured":bool(decrypt(user.razorpay_key_id_enc) and decrypt(user.razorpay_key_secret_enc)),"wa_configured":bool(decrypt(user.whatsapp_access_token_enc) and user.whatsapp_phone_number_id),"wa_version":settings.whatsapp_graph_version,**commercial_context(user)})
 
 @app.post("/settings")
 def update_settings(request:Request,csrf:str=Form(...),company_name:str=Form(...),razorpay_key_id:str=Form(""),razorpay_key_secret:str=Form(""),razorpay_webhook_secret:str=Form(""),whatsapp_access_token:str=Form(""),whatsapp_phone_number_id:str=Form(""),whatsapp_template_name:str=Form("invoice_payment_reminder"),whatsapp_template_language:str=Form("en"),db:Session=Depends(get_db)):
@@ -477,8 +563,8 @@ def update_settings(request:Request,csrf:str=Form(...),company_name:str=Form(...
 
 @app.get("/billing",response_class=HTMLResponse)
 def billing(request:Request,db:Session=Depends(get_db)):
-    user,workspace=require_role(request,db,"owner","admin")
-    return templates.TemplateResponse("billing.html",{"request":request,"user":user,"csrf":csrf_for(request),"plans":PLANS,"message":request.query_params.get("message",""),"subscription_url":request.query_params.get("subscription_url","")})
+    user,workspace=require_role(request,db,"owner","admin",subscription=False)
+    return templates.TemplateResponse("billing.html",{"request":request,"user":user,"csrf":csrf_for(request),"plans":PLANS,"plan_limits":PLAN_LIMITS,"message":request.query_params.get("message",""),"subscription_url":request.query_params.get("subscription_url",""),**commercial_context(user)})
 
 @app.post("/billing/subscribe")
 def subscribe(request:Request,csrf:str=Form(...),plan_code:str=Form(...),db:Session=Depends(get_db)):
@@ -573,7 +659,7 @@ def customers_page(request:Request,db:Session=Depends(get_db)):
         tok=make_statement_token(workspace.id,g["name"])
         rows.append({**g,"statement_url":str(request.base_url).rstrip("/")+"/statement/"+tok})
     rows.sort(key=lambda x:x["outstanding"],reverse=True)
-    return templates.TemplateResponse("customers.html",{"request":request,"user":user,"rows":rows,"money":money})
+    return templates.TemplateResponse("customers.html",{"request":request,"user":user,"rows":rows,"money":money,**commercial_context(user)})
 
 @app.get("/statement/{token}",response_class=HTMLResponse)
 def public_statement(request:Request,token:str,db:Session=Depends(get_db)):
@@ -591,12 +677,13 @@ def team_page(request:Request,db:Session=Depends(get_db)):
     members=list(db.scalars(select(TeamMember).where(TeamMember.workspace_id==workspace.id,TeamMember.status=="active").order_by(TeamMember.created_at.asc())).all())
     member_rows=[{"membership":m,"user":db.get(User,m.user_id)} for m in members]
     invites=list(db.scalars(select(TeamInvite).where(TeamInvite.workspace_id==workspace.id,TeamInvite.status=="pending").order_by(TeamInvite.created_at.desc())).all())
-    return templates.TemplateResponse("team.html",{"request":request,"user":user,"workspace":workspace,"members":member_rows,"invites":invites,"csrf":csrf_for(request),"invite_url":request.query_params.get("invite_url",""),"message":request.query_params.get("message",""),"error":request.query_params.get("error","")})
+    return templates.TemplateResponse("team.html",{"request":request,"user":user,"workspace":workspace,"members":member_rows,"invites":invites,"csrf":csrf_for(request),"invite_url":request.query_params.get("invite_url",""),"message":request.query_params.get("message",""),"error":request.query_params.get("error",""),**commercial_context(user)})
 
 @app.post("/team/invite")
 def team_invite(request:Request,csrf:str=Form(...),email:str=Form(...),role:str=Form("viewer"),db:Session=Depends(get_db)):
     user,workspace=require_role(request,db,"owner","admin"); check_csrf(request,csrf)
     email=email.strip().lower()
+    ensure_limit(user,workspace,"members",db)
     if role not in {"admin","finance","collector","viewer"}: raise HTTPException(400,"Invalid team role")
     existing=db.scalar(select(User).where(func.lower(User.email)==email))
     if existing and existing.workspace_id==workspace.id: return RedirectResponse("/team?error=User+is+already+in+this+workspace",303)
@@ -645,18 +732,19 @@ def team_remove(membership_id:int,request:Request,csrf:str=Form(...),db:Session=
 def audit_page(request:Request,db:Session=Depends(get_db)):
     user,workspace=require_role(request,db,"owner","admin")
     logs=list(db.scalars(select(AuditLog).where(AuditLog.workspace_id==workspace.id).order_by(AuditLog.created_at.desc()).limit(150)).all())
-    return templates.TemplateResponse("audit.html",{"request":request,"user":user,"logs":logs})
+    return templates.TemplateResponse("audit.html",{"request":request,"user":user,"logs":logs,**commercial_context(user)})
 
 @app.get("/recurring",response_class=HTMLResponse)
 def recurring_page(request:Request,db:Session=Depends(get_db)):
     user,workspace=require_role(request,db,"owner","admin","finance","collector","viewer")
     items=list(db.scalars(select(RecurringInvoice).where(RecurringInvoice.workspace_id==workspace.id).order_by(RecurringInvoice.active.desc(),RecurringInvoice.next_issue_date.asc())).all())
-    return templates.TemplateResponse("recurring.html",{"request":request,"user":user,"items":items,"csrf":csrf_for(request),"message":request.query_params.get("message","")})
+    return templates.TemplateResponse("recurring.html",{"request":request,"user":user,"items":items,"csrf":csrf_for(request),"message":request.query_params.get("message",""),**commercial_context(user)})
 
 @app.post("/recurring")
 def recurring_create(request:Request,csrf:str=Form(...),customer_name:str=Form(...),phone:str=Form(""),email:str=Form(""),amount:str=Form(...),cadence:str=Form("monthly"),next_issue_date:str=Form(...),due_days:int=Form(7),db:Session=Depends(get_db)):
     user,workspace=require_role(request,db,"owner","admin","finance"); check_csrf(request,csrf)
     if cadence not in {"weekly","monthly","quarterly","yearly"}: raise HTTPException(400,"Invalid cadence")
+    ensure_limit(user,workspace,"recurring",db)
     amount_d=Decimal(amount)
     if amount_d<=0 or due_days<0: raise HTTPException(400,"Invalid recurring invoice values")
     item=RecurringInvoice(workspace_id=workspace.id,created_by_user_id=user.id,customer_name=customer_name.strip(),phone=phone.strip() or None,email=email.strip() or None,amount=amount_d,cadence=cadence,next_issue_date=date.fromisoformat(next_issue_date),due_days=due_days,active=True)
