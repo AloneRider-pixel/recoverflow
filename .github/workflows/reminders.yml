@@ -1,0 +1,19 @@
+name: RecoverFlow daily reminders
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 4 * * *"
+
+jobs:
+  reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger overdue reminders
+        env:
+          RECOVERFLOW_CRON_SECRET: ${{ secrets.RECOVERFLOW_CRON_SECRET }}
+        run: |
+          test -n "$RECOVERFLOW_CRON_SECRET"
+          curl --fail-with-body -X POST \
+            -H "X-Cron-Secret: $RECOVERFLOW_CRON_SECRET" \
+            "https://recoverflow-7vnr.onrender.com/internal/reminders"
