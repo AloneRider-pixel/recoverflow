@@ -98,3 +98,15 @@ def platform_keys():
 def platform_request(method,path,payload=None):
     key_id,key_secret=platform_keys()
     return _razorpay_request(method,path,key_id,key_secret,payload)
+
+def send_expo_push(tokens, title, body, data=None):
+    messages=[]
+    for token in tokens:
+        if not token or not token.startswith("ExponentPushToken["): continue
+        messages.append({"to":token,"title":title,"body":body,"data":data or {}, "sound":"default"})
+    if not messages: return []
+    with httpx.Client(timeout=15) as client:
+        r=client.post("https://exp.host/--/api/v2/push/send",json=messages,headers={"Content-Type":"application/json"})
+    if r.status_code >= 400:
+        return []
+    return (r.json() or {}).get("data") or []
