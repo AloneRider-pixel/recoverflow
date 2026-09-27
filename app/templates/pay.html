@@ -90,10 +90,17 @@
       const checkout=new Razorpay(options);
       checkout.on('payment.failed',function(response){
         button.disabled=false;
-        setStatus(response?.error?.description||'Payment failed. Please try again.','error');
+        const err=response?.error||{};
+        const detail=err.description||'Payment failed. Please try again.';
+        const reason=err.reason?(' · '+err.reason):'';
+        setStatus(detail+reason,'error');
       });
       checkout.open();
-      setStatus('Razorpay Checkout opened.');
+      if((order.key_id||'').startsWith('rzp_test_')){
+        setStatus('Test mode: after card details, use any 4–10 digit OTP on the mock bank page.');
+      }else{
+        setStatus('Razorpay Checkout opened.');
+      }
     }catch(error){
       button.disabled=false;
       setStatus(error.message||'Unable to start checkout.','error');
