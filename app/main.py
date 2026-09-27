@@ -402,6 +402,32 @@ def leads_page(request:Request,db:Session=Depends(get_db)):
     leads=list(db.scalars(select(Lead).order_by(Lead.created_at.desc()).limit(200)).all())
     return templates.TemplateResponse("leads.html",{"request":request,"user":user,"leads":leads,**commercial_context(user)})
 
+@app.get("/launch",response_class=HTMLResponse)
+def launch_page(request:Request,db:Session=Depends(get_db)):
+    user,workspace=require_role(request,db,"owner","admin",subscription=False)
+    checks=[
+        ("Web service","Render service is deployed from main","ready"),
+        ("PostgreSQL","PostgreSQL database available","ready" if settings.database_url.startswith("postgresql") else "action"),
+        ("Session security","Production session secret configured","ready" if settings.session_secret and settings.session_secret!="dev-only-change-me" else "action"),
+        ("Subscription billing","Razorpay platform credentials configured","ready" if settings.razorpay_platform_key_id and settings.razorpay_platform_key_secret else "action"),
+        ("Automations","Cron secret configured","ready" if settings.cron_secret else "action"),
+        ("WhatsApp","Workspace WhatsApp credentials configured","ready" if decrypt(user.whatsapp_access_token_enc) and user.whatsapp_phone_number_id and settings.whatsapp_graph_version else "optional"),
+        ("Sales capture","Website demo-request pipeline active","ready"),
+        ("Legal","Replace placeholder legal-entity/support details before paid launch","action"),
+    ]
+    leads_count=db.scalar(select(func.count(Lead.id))) or 0
+    return templates.TemplateResponse("launch.html",{"request":request,"user":user,"workspace":workspace,"checks":checks,"leads_count":leads_count,"sales_email":settings.sales_email,"public_base_url":settings.public_base_url or str(request.base_url).rstrip("/"),**commercial_context(user)})
+
+@app.get("/leads/export.csv")
+def export_leads(request:Request,db:Session=Depends(get_db)):
+    user,workspace=require_role(request,db,"owner","admin",subscription=False)
+    leads=list(db.scalars(select(Lead).order_by(Lead.created_at.desc())).all())
+    output=io.StringIO(); writer=csv.writer(output)
+    writer.writerow(["name","company_name","email","phone","message","status","created_at"])
+    for lead in leads:
+        writer.writerow([lead.name,lead.company_name,lead.email,lead.phone or "",lead.message or "",lead.status,lead.created_at])
+    return PlainTextResponse(output.getvalue(),media_type="text/csv",headers={"Content-Disposition":"attachment; filename=\"recoverflow-leads.csv\""})
+
 @app.get("/login",response_class=HTMLResponse)
 def login_page(request:Request):
     return templates.TemplateResponse("login.html",{"request":request,"error":request.query_params.get("error","")})
