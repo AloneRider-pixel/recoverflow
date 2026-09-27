@@ -87,4 +87,16 @@ def update_settings(request:Request,csrf:str=Form(...),company_name:str=Form(...
 @app.get("/billing",response_class=HTMLResponse)
 def billing(request:Request,db:Session=Depends(get_db)):
     user=require_user(request,db)
-    return templates.TemplateResponse("billing.html",{"request":request,"user":user,"csrf":csrf_for(request),"plans":PLANS,"message":request.query_params.get("message",""),"subscription_url":request.query_params.get("subscription_url","")})
+    return templates.TemplateResponse("billing.html",{"request":request,"user":user,"csrf":csrf_for(request),"plans":PLANS,"message":request.query_params.get("message",""),"subscription_url":request.query_params.get("subscription_url","")}@app.get("/api/v1/customers")
+def api_customers(request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db)
+    invoices=list(db.scalars(select(Invoice).where(Invoice.owner_id==user.id)).all())
+    groups={}
+    for i in invoices:
+        key=i.customer_name.strip().lower()
+        g=groups.setdefault(key,{"name":i.customer_name,"phone":i.phone,"email":i.email,"invoice_count":0,"outstanding":Decimal("0"),"overdue":Decimal("0")})
+        g["invoice_count"]+=1; g["outstanding"]+=i.balance
+        if i.days_overdue: g["overdue"]+=i.balance
+    return [{**g,"outstanding":str(g["outstanding"]),"overdue":str(g["overdue"])} for g in sorted(groups.values(),key=lambda x:x["outstanding"],reverse=True)]
+
+)
