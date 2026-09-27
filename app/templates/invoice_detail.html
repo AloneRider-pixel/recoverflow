@@ -27,6 +27,45 @@
       </div>
 
       <div class="rf-card p-5 sm:p-7">
+        <div class="flex items-center justify-between gap-3">
+          <div><div class="rf-kicker">Collection memory</div><h2 class="mt-2 text-xl font-bold">What happened with this customer</h2></div>
+          <span class="rf-pill text-slate-500">{{collection_events|length}} events</span>
+        </div>
+        <div class="mt-5 space-y-3">
+          {% for e in collection_events %}
+          <div class="rounded-2xl border border-white/6 bg-black/10 p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="text-xs font-bold text-slate-200">{{e.event_type|replace('_',' ')|title}}</div>
+                {% if e.promised_date %}<div class="mt-1 text-[11px] text-emerald-100">Promised {{e.promised_date.strftime('%d %b %Y')}}{% if e.promised_amount %} · {{money(e.promised_amount)}}{% endif %}</div>{% endif %}
+              </div>
+              <div class="text-[10px] text-slate-700">{{e.created_at.strftime('%d %b %Y %H:%M') if e.created_at else ''}}</div>
+            </div>
+            {% if e.body %}<div class="mt-2 text-xs leading-5 text-slate-500">{{e.body}}</div>{% endif %}
+          </div>
+          {% else %}
+          <div class="rounded-2xl border border-white/6 bg-white/[.012] p-5 text-sm text-slate-600">No collection activity recorded yet.</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="rf-card p-5 sm:p-7">
+        <div class="rf-kicker">Customer reply intelligence</div>
+        <h2 class="mt-2 text-xl font-bold">Turn a reply into a collection event</h2>
+        <p class="mt-1 text-xs text-slate-600">Paste the customer message, review the suggested outcome, then save it manually.</p>
+        {% if user.role in ['owner','admin','finance','collector'] %}
+        <form id="invoiceReplyAnalyzer" class="mt-5">
+          <textarea id="invoiceReplyText" rows="4" class="rf-input leading-6" placeholder="e.g. Friday ko ₹50,000 transfer kar denge."></textarea>
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <button type="submit" class="rf-btn-secondary text-sm">Analyze customer reply</button>
+            <span id="invoiceReplyStatus" class="text-[11px] text-slate-600"></span>
+          </div>
+          <div id="invoiceReplyResult" class="hidden mt-4 rounded-2xl border border-cyan-200/8 bg-cyan-200/[.02] p-4"></div>
+        </form>
+        {% endif %}
+      </div>
+
+            <div class="rf-card p-5 sm:p-7">
         <div class="rf-kicker">Invoice context</div><div class="mt-5 grid sm:grid-cols-2 gap-4">
           <div><div class="text-xs text-slate-600">Customer phone</div><div class="mt-1 text-sm font-semibold">{{invoice.phone or 'No phone number'}}</div></div>
           <div><div class="text-xs text-slate-600">Customer email</div><div class="mt-1 text-sm font-semibold">{{invoice.email or 'No email address'}}</div></div>
@@ -77,5 +116,28 @@ function copyRazorpayLink(){
   if(!input) return;
   navigator.clipboard.writeText(input.value);
 }
+
+async function analyzeInvoiceReply(){
+  const text=(document.getElementById('invoiceReplyText')||{}).value||'';
+  const status=document.getElementById('invoiceReplyStatus');
+  const result=document.getElementById('invoiceReplyResult');
+  if(!text.trim()){status.textContent='Paste the customer reply first.';return;}
+  status.textContent='Analyzing…'; result.classList.add('hidden');
+  try{
+    const body=new URLSearchParams({csrf:'{{csrf}}',reply:text});
+    const response=await fetch('/collections/{{invoice.id}}/analyze',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+    const data=await response.json();
+    if(!response.ok || !data.ok) throw new Error(data.detail||'Analysis failed');
+    result.innerHTML='<div class="font-bold text-cyan-100">Suggested outcome: '+data.event_type.replaceAll('_',' ')+'</div>'
+      +'<div class="mt-1 text-xs text-slate-500">'+(data.reason||'')+'</div>'
+      +(data.promised_date?'<div class="mt-2 text-xs text-emerald-100">Promise date: '+data.promised_date+'</div>':'')
+      +(data.promised_amount?'<div class="text-xs text-emerald-100">Promise amount: ₹'+Number(data.promised_amount).toLocaleString('en-IN')+'</div>':'')
+      +'<div class="mt-2 text-[11px] text-slate-700">Confidence '+Math.round((data.confidence||0)*100)+'% · '+data.source+'</div>'
+      +'<div class="mt-3 text-xs text-slate-500">Review this suggestion and record the event from the Collections queue.</div>';
+    result.classList.remove('hidden'); status.textContent='Analysis ready.';
+  }catch(err){status.textContent=err.message||'Analysis failed.';}
+}
+const invoiceReplyForm=document.getElementById('invoiceReplyAnalyzer');
+if(invoiceReplyForm) invoiceReplyForm.addEventListener('submit',e=>{e.preventDefault();analyzeInvoiceReply();});
 </script>
 </section>{% endblock %}
