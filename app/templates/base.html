@@ -89,14 +89,12 @@
           <div><div class="font-black tracking-tight text-[16px]">RecoverFlow</div><div class="text-[10px] text-slate-600 mt-0.5 tracking-[.12em] uppercase">Receivables OS</div></div>
         </a>
       </div>
-
       <div class="px-3">
         <div class="px-2 mb-2 text-[9px] uppercase tracking-[.2em] text-slate-700 font-black">Workspace</div>
         <a href="/" class="rf-nav-item {% if request.url.path=='/' %}active{% endif %}"><span class="rf-nav-dot"></span>Overview</a>
         <a href="/customers" class="rf-nav-item {% if request.url.path.startswith('/customers') %}active{% endif %}"><span class="rf-nav-dot"></span>Customers</a>
         <a href="/recurring" class="rf-nav-item {% if request.url.path.startswith('/recurring') %}active{% endif %}"><span class="rf-nav-dot"></span>Recurring</a>
       </div>
-
       <div class="px-3 mt-5">
         <div class="px-2 mb-2 text-[9px] uppercase tracking-[.2em] text-slate-700 font-black">Operations</div>
         {% if user.role in ['owner','admin'] %}
@@ -107,7 +105,6 @@
         {% endif %}
         <a href="/settings" class="rf-nav-item {% if request.url.path.startswith('/settings') %}active{% endif %}"><span class="rf-nav-dot"></span>Settings</a>
       </div>
-
       <div class="mt-auto p-4">
         <div class="rounded-2xl border border-white/7 bg-white/[.025] p-3">
           <div class="flex items-center gap-3">
@@ -121,7 +118,6 @@
       </div>
     </div>
   </aside>
-
   <div class="rf-main">
     <header class="rf-topbar">
       <div class="max-w-[1500px] mx-auto h-full px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
@@ -157,10 +153,6 @@
       </div>
     </div>
     {% endif %}
-    <main>{% block content %}{% endblock %}</main>
-    <footer class="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-8 text-[10px] text-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"><span class="tracking-[.12em] uppercase">RecoverFlow · Receivables operations</span><span class="flex gap-4"><a href="/privacy" class="hover:text-slate-500">Privacy</a><a href="/terms" class="hover:text-slate-500">Terms</a><a href="/refunds" class="hover:text-slate-500">Refunds</a></span></footer>
-  </div>
-</div>
 {% else %}
 <nav class="sticky top-0 z-40 border-b border-white/7 bg-rf-950/80 backdrop-blur-xl">
   <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
@@ -174,9 +166,18 @@
     <div class="flex items-center gap-2"><a href="/login" class="px-3 py-2.5 text-sm text-slate-400 hover:text-white">Sign in</a><a href="/register" class="rf-btn-primary text-sm">Start free</a></div>
   </div>
 </nav>
+{% endif %}
+
 <main>{% block content %}{% endblock %}</main>
+
+{% if user %}
+    <footer class="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-8 text-[10px] text-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"><span class="tracking-[.12em] uppercase">RecoverFlow · Receivables operations</span><span class="flex gap-4"><a href="/privacy" class="hover:text-slate-500">Privacy</a><a href="/terms" class="hover:text-slate-500">Terms</a><a href="/refunds" class="hover:text-slate-500">Refunds</a></span></footer>
+  </div>
+</div>
+{% else %}
 <footer class="max-w-7xl mx-auto px-4 sm:px-6 py-10 text-xs text-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"><span>RecoverFlow · Receivables operations</span><span class="flex gap-4"><a href="/request-demo" class="hover:text-slate-500">Book a demo</a><a href="/privacy" class="hover:text-slate-500">Privacy</a><a href="/terms" class="hover:text-slate-500">Terms</a><a href="/refunds" class="hover:text-slate-500">Refunds</a></span></footer>
 {% endif %}
+
 <script>
   const menu=document.getElementById('rfMenu'), sidebar=document.getElementById('rfSidebar');
   if(menu&&sidebar){menu.addEventListener('click',()=>sidebar.classList.toggle('open'));document.addEventListener('click',e=>{if(window.innerWidth<1024&&sidebar.classList.contains('open')&&!sidebar.contains(e.target)&&!menu.contains(e.target))sidebar.classList.remove('open')});}
