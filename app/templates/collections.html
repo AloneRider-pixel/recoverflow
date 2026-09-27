@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-7 md:py-9">
+  <div class="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-5">
+    <div>
+      <div class="rf-kicker">COLLECTIONS AUTOPILOT · MVP</div>
+      <h1 class="mt-2 text-3xl md:text-4xl font-black tracking-tight">Collect the next rupee.</h1>
+      <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-500">A working queue for invoice-to-cash operations: prioritize the receivables that need attention, record customer commitments, and keep the next action attached to the invoice.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <span class="rf-pill text-cyan-100 border-cyan-200/10 bg-cyan-200/[.025]">Rules v0</span>
+      <span class="rf-pill text-slate-400">Human-approved actions</span>
+      <a href="/invoices/new" class="rf-btn-primary text-xs">+ Add receivable</a>
+    </div>
+  </div>
+
+  {% if message %}
+  <div class="mt-5 rounded-2xl border border-emerald-200/10 bg-emerald-200/[.025] px-4 py-3 text-sm text-emerald-100">{{message}}</div>
+  {% endif %}
+  {% if error %}
+  <div class="mt-5 rounded-2xl border border-rose-200/10 bg-rose-200/[.025] px-4 py-3 text-sm text-rose-100">{{error}}</div>
+  {% endif %}
+
+  <div class="mt-7 grid sm:grid-cols-2 xl:grid-cols-5 gap-3">
+    <div class="rf-card rf-card-hover p-5"><div class="rf-kicker">Outstanding</div><div class="mt-2 text-2xl font-black">{{money(outstanding)}}</div><div class="mt-1 text-[11px] text-slate-600">Open balance</div></div>
+    <div class="rf-card rf-card-hover p-5"><div class="rf-kicker">Overdue</div><div class="mt-2 text-2xl font-black text-rose-100">{{money(overdue)}}</div><div class="mt-1 text-[11px] text-slate-600">Past due</div></div>
+    <div class="rf-card rf-card-hover p-5"><div class="rf-kicker">Due ≤ 7d</div><div class="mt-2 text-2xl font-black">{{money(due_7)}}</div><div class="mt-1 text-[11px] text-slate-600">Near-term cash</div></div>
+    <div class="rf-card rf-card-hover p-5"><div class="rf-kicker">Promises</div><div class="mt-2 text-2xl font-black text-emerald-100">{{promises}}</div><div class="mt-1 text-[11px] text-slate-600">Active promises-to-pay</div></div>
+    <div class="rf-card rf-card-hover p-5"><div class="rf-kicker">Broken promises</div><div class="mt-2 text-2xl font-black text-amber-100">{{broken}}</div><div class="mt-1 text-[11px] text-slate-600">Needs escalation</div></div>
+  </div>
+
+  <div class="mt-7 rf-card overflow-hidden">
+    <div class="px-5 sm:px-6 py-5 border-b border-white/6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+      <div>
+        <div class="rf-kicker">Today's queue</div>
+        <h2 class="mt-1.5 text-lg font-bold">What needs an action next</h2>
+      </div>
+      <div class="text-[11px] text-slate-600">Sorted by overdue age, balance, promises and disputes · {{rows|length}} receivables shown</div>
+    </div>
+
+    {% for r in rows %}
+    {% set i=r.invoice %}
+    <div class="p-5 sm:p-6 border-b border-white/6 last:border-b-0">
+      <div class="grid xl:grid-cols-[1.3fr_.8fr_.95fr_1.25fr_auto] gap-5 items-start">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            {% if r.priority == 'Critical' %}
+              <span class="rf-pill text-rose-100 border-rose-300/10 bg-rose-300/[.035]">{{r.priority}}</span>
+            {% elif r.priority == 'High' %}
+              <span class="rf-pill text-amber-100 border-amber-200/10 bg-amber-200/[.035]">{{r.priority}}</span>
+            {% elif r.priority == 'Medium' %}
+              <span class="rf-pill text-cyan-100 border-cyan-200/10 bg-cyan-200/[.025]">{{r.priority}}</span>
+            {% else %}
+              <span class="rf-pill text-slate-500">{{r.priority}}</span>
+            {% endif %}
+            <span class="text-[10px] text-slate-700 uppercase tracking-[.15em]">{{r.due_label}}</span>
+          </div>
+          <a href="/invoices/{{i.id}}" class="mt-3 block text-base font-black hover:text-cyan-100 transition truncate">{{i.customer_name}}</a>
+          <div class="mt-1 text-xs text-slate-600">{{i.invoice_number}} · due {{i.due_date.strftime('%d %b %Y')}}</div>
+        </div>
+
+        <div>
+          <div class="text-[10px] text-slate-700 uppercase tracking-[.15em]">Balance</div>
+          <div class="mt-2 text-xl font-black">{{money(i.balance)}}</div>
+          <div class="mt-1 text-[11px] text-slate-600">Invoice total {{money(i.amount)}}</div>
+        </div>
+
+        <div>
+          <div class="text-[10px] text-slate-700 uppercase tracking-[.15em]">Collection state</div>
+          {% if r.state_event and r.state_event.event_type == 'promise' %}
+            <div class="mt-2 text-sm font-bold text-emerald-100">{% if r.promise_broken %}Promise broken{% else %}Promise active{% endif %}</div>
+            {% if r.state_event.promised_date %}<div class="mt-1 text-[11px] text-slate-600">Promised {{r.state_event.promised_date.strftime('%d %b %Y')}}{% if r.state_event.promised_amount %} · {{money(r.state_event.promised_amount)}}{% endif %}</div>{% endif %}
+          {% elif r.state_event and r.state_event.event_type == 'dispute' %}
+            <div class="mt-2 text-sm font-bold text-amber-100">Dispute needs review</div>
+            <div class="mt-1 text-[11px] text-slate-600 truncate">{{r.state_event.body or 'No dispute note recorded.'}}</div>
+          {% elif r.state_event and r.state_event.event_type == 'payment_claimed' %}
+            <div class="mt-2 text-sm font-bold text-cyan-100">Payment claimed</div>
+            <div class="mt-1 text-[11px] text-slate-600">Verify the payment before closing.</div>
+          {% else %}
+            <div class="mt-2 text-sm font-bold">No commitment recorded</div>
+            <div class="mt-1 text-[11px] text-slate-600">Create the next customer event.</div>
+          {% endif %}
+        </div>
+
+        <div>
+          <div class="text-[10px] text-slate-700 uppercase tracking-[.15em]">Next action</div>
+          <div class="mt-2 text-sm font-bold text-cyan-100">{{r.action}}</div>
+          <div class="mt-1 text-[11px] text-slate-600">Attention score {{r.score}}/100</div>
+        </div>
+
+        <div class="flex xl:flex-col gap-2 xl:items-stretch">
+          <a href="/invoices/{{i.id}}" class="rf-btn-secondary text-xs whitespace-nowrap">Open invoice →</a>
+          {% if user.role in ['owner','admin','finance','collector'] %}
+          <form method="post" action="/invoices/{{i.id}}/payment">
+            <input type="hidden" name="csrf" value="{{csrf}}">
+            <button class="rf-btn-secondary text-xs w-full whitespace-nowrap">Payment link</button>
+          </form>
+          {% if i.phone %}
+          <form method="post" action="/invoices/{{i.id}}/whatsapp">
+            <input type="hidden" name="csrf" value="{{csrf}}">
+            <button class="rf-btn-secondary text-xs w-full whitespace-nowrap">WhatsApp</button>
+          </form>
+          {% endif %}
+          {% endif %}
+        </div>
+      </div>
+
+      {% if user.role in ['owner','admin','finance','collector'] %}
+      <details class="mt-5">
+        <summary class="cursor-pointer text-xs font-bold text-slate-500 hover:text-cyan-100">Log collection activity</summary>
+        <form method="post" action="/collections/{{i.id}}/event" class="mt-3 grid md:grid-cols-2 xl:grid-cols-6 gap-3 rounded-2xl border border-white/6 bg-black/10 p-4">
+          <input type="hidden" name="csrf" value="{{csrf}}">
+          <div class="xl:col-span-1">
+            <label class="rf-label block mb-1.5">Event</label>
+            <select class="rf-input text-sm" name="event_type">
+              <option value="contact">Contact attempt</option>
+              <option value="promise">Promise to pay</option>
+              <option value="dispute">Dispute / exception</option>
+              <option value="payment_claimed">Payment claimed</option>
+              <option value="note">Internal note</option>
+            </select>
+          </div>
+          <div class="xl:col-span-2">
+            <label class="rf-label block mb-1.5">Customer / internal note</label>
+            <input class="rf-input text-sm" name="body" placeholder="e.g. Customer says payment will land Friday">
+          </div>
+          <div>
+            <label class="rf-label block mb-1.5">Promise date</label>
+            <input class="rf-input text-sm" type="date" name="promised_date">
+          </div>
+          <div>
+            <label class="rf-label block mb-1.5">Promise amount</label>
+            <input class="rf-input text-sm" type="number" step="0.01" min="0" name="promised_amount" value="{{'%.2f'|format(i.balance)}}">
+          </div>
+          <div class="flex items-end">
+            <button class="rf-btn-primary w-full text-xs">Save activity</button>
+          </div>
+        </form>
+      </details>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="px-6 py-20 text-center">
+      <div class="mx-auto h-12 w-12 rounded-2xl border border-emerald-200/10 bg-emerald-200/[.025] grid place-items-center text-emerald-100">✓</div>
+      <div class="mt-4 text-lg font-black">Nothing is outstanding.</div>
+      <div class="mt-1 text-sm text-slate-600">The collections queue is clear.</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="mt-5 grid lg:grid-cols-3 gap-3">
+    <div class="rounded-2xl border border-white/6 bg-white/[.018] p-5"><div class="text-xs font-bold">1 · Prioritize</div><p class="mt-2 text-[11px] leading-5 text-slate-600">The queue combines ageing, open balance and the latest commitment or exception to decide what should be touched first.</p></div>
+    <div class="rounded-2xl border border-white/6 bg-white/[.018] p-5"><div class="text-xs font-bold">2 · Act</div><p class="mt-2 text-[11px] leading-5 text-slate-600">Keep WhatsApp, payment links and the invoice record together so the team does not jump between spreadsheets and chat.</p></div>
+    <div class="rounded-2xl border border-white/6 bg-white/[.018] p-5"><div class="text-xs font-bold">3 · Learn</div><p class="mt-2 text-[11px] leading-5 text-slate-600">Every contact, promise, dispute and payment claim becomes structured history for future collection intelligence.</p></div>
+  </div>
+</section>
+{% endblock %}

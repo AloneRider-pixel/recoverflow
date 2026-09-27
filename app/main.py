@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from openai import OpenAI
 from .config import settings
 from .db import get_db, init_db, engine
-from .models import User, Invoice, PaymentLink, PaymentTransaction, WebhookEvent, ReminderLog, BillingPlan, DeviceToken, Workspace, TeamMember, TeamInvite, AuditLog, RecurringInvoice, Lead
+from .models import User, Invoice, PaymentLink, PaymentTransaction, WebhookEvent, ReminderLog, BillingPlan, DeviceToken, Workspace, TeamMember, TeamInvite, AuditLog, RecurringInvoice, Lead, CollectionEvent
 from .security import set_session, clear_session, read_session, new_csrf, encrypt, decrypt, make_api_token, read_api_token, make_public_invoice_token, read_public_invoice_token, make_statement_token, read_statement_token, make_api_token, read_api_token
 from .password import hash_password, verify_password
 from .integrations import create_payment_link, send_whatsapp_template, verify_webhook, merchant_keys, webhook_secret, platform_request, platform_keys, send_expo_push, standard_checkout_keys, standard_checkout_client, create_standard_checkout_order
@@ -151,6 +151,78 @@ def ai_message(i,tone):
     except Exception:
         return None
 
+def collection_queue(invoices, events=None):
+    events=events or []
+    latest_state={}
+    latest_any={}
+    for event in events:
+        if event.invoice_id not in latest_any:
+            latest_any[event.invoice_id]=event
+        if event.event_type in {"promise","dispute","payment_claimed"} and event.invoice_id not in latest_state:
+            latest_state[event.invoice_id]=event
+
+    open_invoices=[i for i in invoices if i.balance>0]
+    max_balance=max((i.balance for i in open_invoices), default=Decimal("1"))
+    rows=[]
+    today=date.today()
+
+    for invoice in open_invoices:
+        state=latest_state.get(invoice.id)
+        last_any=latest_any.get(invoice.id)
+        promise_broken=bool(
+            state and state.event_type=="promise" and state.promised_date and state.promised_date < today
+        )
+        dispute=bool(state and state.event_type=="dispute")
+        payment_claimed=bool(state and state.event_type=="payment_claimed")
+
+        overdue=invoice.days_overdue
+        balance_weight=(invoice.balance/max_balance)*Decimal("30")
+        score=Decimal("10")+Decimal(str(min(overdue,60)))*Decimal("0.7")+balance_weight
+        if promise_broken: score+=Decimal("24")
+        elif dispute: score+=Decimal("18")
+        elif payment_claimed: score+=Decimal("12")
+        score=int(min(score,100))
+
+        if promise_broken:
+            priority="Critical"; action="Broken promise — follow up today"
+        elif dispute:
+            priority="High"; action="Resolve dispute before chasing payment"
+        elif payment_claimed:
+            priority="High"; action="Verify payment claim"
+        elif overdue>=30:
+            priority="Critical"; action="Call + payment link"
+        elif overdue>=8:
+            priority="High"; action="WhatsApp + payment link"
+        elif overdue>=1:
+            priority="Medium"; action="Send overdue reminder"
+        elif invoice.due_date==today:
+            priority="Medium"; action="Due today — request confirmation"
+        elif (invoice.due_date-today).days<=3:
+            priority="Low"; action="Pre-due reminder"
+        else:
+            priority="Low"; action="Monitor"
+
+        if overdue:
+            due_label=f"{overdue}d overdue"
+        else:
+            delta=(invoice.due_date-today).days
+            due_label="Due today" if delta==0 else f"Due in {delta}d"
+
+        rows.append({
+            "invoice":invoice,
+            "score":score,
+            "priority":priority,
+            "action":action,
+            "due_label":due_label,
+            "state_event":state,
+            "last_event":last_any,
+            "last_contact_at": last_any.created_at if last_any and last_any.event_type=="contact" else None,
+            "promise_broken":promise_broken,
+        })
+
+    rows.sort(key=lambda r:(-r["score"], -float(r["invoice"].balance), r["invoice"].due_date))
+    return rows
+
 def session_user(request, db):
     data=read_session(request)
     if not data or not data.get("user_id"):
@@ -277,6 +349,74 @@ def api_dashboard(request:Request,db:Session=Depends(get_db)):
     outstanding=sum((i.balance for i in invoices),Decimal("0")); overdue=sum((i.balance for i in invoices if i.days_overdue>0),Decimal("0")); due_today=sum((i.balance for i in invoices if i.balance>0 and i.due_date==date.today()),Decimal("0")); paid=sum((i.paid_amount for i in invoices),Decimal("0")); invoiced=sum((i.amount for i in invoices),Decimal("0"))
     rate=(paid/invoiced*Decimal("100")) if invoiced else Decimal("0")
     return {"outstanding":str(outstanding),"overdue":str(overdue),"due_today":str(due_today),"paid":str(paid),"invoice_count":len(invoices),"customer_count":len({i.customer_name for i in invoices}),"collection_rate":str(rate.quantize(Decimal("0.1")))}
+
+
+@app.get("/api/v1/collections")
+def api_collections(request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db); ensure_access(user); workspace=workspace_for(user,db)
+    invoices=list(db.scalars(select(Invoice).where(Invoice.workspace_id==workspace.id,Invoice.paid_amount<Invoice.amount)).all())
+    events=list(db.scalars(select(CollectionEvent).where(CollectionEvent.workspace_id==workspace.id).order_by(CollectionEvent.created_at.desc())).all())
+    rows=collection_queue(invoices,events)
+    return [{
+        "invoice_id":r["invoice"].id,
+        "invoice_number":r["invoice"].invoice_number,
+        "customer_name":r["invoice"].customer_name,
+        "balance":str(r["invoice"].balance),
+        "days_overdue":r["invoice"].days_overdue,
+        "due_date":r["invoice"].due_date.isoformat(),
+        "priority":r["priority"],
+        "recovery_score":r["score"],
+        "recommended_action":r["action"],
+        "last_event":r["last_event"].event_type if r["last_event"] else None,
+        "promise_date":r["state_event"].promised_date.isoformat() if r["state_event"] and r["state_event"].promised_date else None,
+        "promise_amount":str(r["state_event"].promised_amount) if r["state_event"] and r["state_event"].promised_amount is not None else None,
+    } for r in rows[:100]]
+
+@app.get("/api/v1/invoices/{invoice_id}/collection-events")
+def api_collection_events(invoice_id:int,request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db); ensure_access(user); workspace=workspace_for(user,db)
+    invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.workspace_id==workspace.id))
+    if not invoice: raise HTTPException(404,"Invoice not found")
+    events=list(db.scalars(select(CollectionEvent).where(CollectionEvent.invoice_id==invoice.id,CollectionEvent.workspace_id==workspace.id).order_by(CollectionEvent.created_at.desc()).limit(50)).all())
+    return [{
+        "id":e.id,"event_type":e.event_type,"channel":e.channel,"body":e.body,
+        "promised_date":e.promised_date.isoformat() if e.promised_date else None,
+        "promised_amount":str(e.promised_amount) if e.promised_amount is not None else None,
+        "created_at":e.created_at.isoformat() if e.created_at else None,
+    } for e in events]
+
+@app.post("/api/v1/invoices/{invoice_id}/collection-events")
+async def api_create_collection_event(invoice_id:int,request:Request,db:Session=Depends(get_db)):
+    user,workspace=api_require_role(request,db,"owner","admin","finance","collector")
+    try: data=await request.json()
+    except Exception: raise HTTPException(400,"Invalid JSON")
+    event_type=str(data.get("event_type","note")).strip().lower()
+    if event_type not in {"contact","promise","dispute","payment_claimed","note"}:
+        raise HTTPException(400,"Invalid collection event")
+    invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.workspace_id==workspace.id))
+    if not invoice: raise HTTPException(404,"Invoice not found")
+    promised_date=None; promised_amount=None
+    if event_type=="promise":
+        try:
+            promised_date=date.fromisoformat(str(data.get("promised_date","")))
+            promised_amount=Decimal(str(data.get("promised_amount") or invoice.balance))
+        except (ValueError,InvalidOperation):
+            raise HTTPException(400,"Promise date and amount are required")
+        if promised_amount<=0: raise HTTPException(400,"Promise amount must be positive")
+    event=CollectionEvent(
+        workspace_id=workspace.id, invoice_id=invoice.id, user_id=user.id,
+        event_type=event_type, channel=str(data.get("channel","manual")).strip()[:30] or "manual",
+        body=str(data.get("body","")).strip()[:2000] or None,
+        promised_date=promised_date, promised_amount=promised_amount
+    )
+    db.add(event)
+    audit(db,user,f"collection.{event_type}","invoice",invoice.id,{
+        "channel":event.channel,
+        "promised_date":promised_date.isoformat() if promised_date else None,
+        "promised_amount":str(promised_amount) if promised_amount is not None else None,
+    })
+    db.commit()
+    return {"ok":True,"id":event.id}
 
 @app.get("/api/v1/customers")
 def api_customers(request:Request,db:Session=Depends(get_db)):
@@ -1127,6 +1267,63 @@ def internal_reminders(request:Request,db:Session=Depends(get_db)):
             except HTTPException:
                 db.rollback(); skipped+=1
     return {"ok":True,"sent":sent,"skipped":skipped}
+
+
+@app.get("/collections",response_class=HTMLResponse)
+def collections_page(request:Request,db:Session=Depends(get_db)):
+    user,workspace=require_role(request,db,"owner","admin","finance","collector","viewer")
+    invoices=list(db.scalars(
+        select(Invoice)
+        .where(Invoice.workspace_id==workspace.id,Invoice.paid_amount<Invoice.amount)
+    ).all())
+    events=list(db.scalars(
+        select(CollectionEvent)
+        .where(CollectionEvent.workspace_id==workspace.id)
+        .order_by(CollectionEvent.created_at.desc())
+        .limit(1000)
+    ).all())
+    rows=collection_queue(invoices,events)
+    overdue=sum((i.balance for i in invoices if i.days_overdue>0),Decimal("0"))
+    due_7=sum((i.balance for i in invoices if 0<= (i.due_date-date.today()).days <= 7),Decimal("0"))
+    promises=sum(1 for r in rows if r["state_event"] and r["state_event"].event_type=="promise" and r["state_event"].promised_date and r["state_event"].promised_date>=date.today())
+    broken=sum(1 for r in rows if r["promise_broken"])
+    return templates.TemplateResponse("collections.html",{
+        "request":request,"user":user,"csrf":csrf_for(request),"rows":rows[:50],
+        "outstanding":sum((i.balance for i in invoices),Decimal("0")),
+        "overdue":overdue,"due_7":due_7,"promises":promises,"broken":broken,
+        "money":money,"message":request.query_params.get("message",""),"error":request.query_params.get("error",""),**commercial_context(user)
+    })
+
+@app.post("/collections/{invoice_id}/event")
+def create_collection_event(
+    invoice_id:int,request:Request,csrf:str=Form(...),event_type:str=Form(...),
+    body:str=Form(""),promised_date:str=Form(""),promised_amount:str=Form(""),
+    db:Session=Depends(get_db)
+):
+    user,workspace=require_role(request,db,"owner","admin","finance","collector"); check_csrf(request,csrf)
+    if event_type not in {"contact","promise","dispute","payment_claimed","note"}:
+        raise HTTPException(400,"Invalid collection event")
+    invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.workspace_id==workspace.id))
+    if not invoice: raise HTTPException(404,"Invoice not found")
+
+    promise_date=None; promise_amount=None
+    if event_type=="promise":
+        try: promise_date=date.fromisoformat(promised_date)
+        except ValueError: return RedirectResponse(f"/collections?error=Enter+a+valid+promise+date+for+{invoice.invoice_number}",303)
+        try: promise_amount=Decimal(promised_amount or str(invoice.balance))
+        except InvalidOperation: return RedirectResponse(f"/collections?error=Enter+a+valid+promise+amount+for+{invoice.invoice_number}",303)
+        if promise_amount<=0: raise HTTPException(400,"Promise amount must be positive")
+    event=CollectionEvent(
+        workspace_id=workspace.id,invoice_id=invoice.id,user_id=user.id,event_type=event_type,
+        channel="manual",body=body.strip()[:2000] or None,promised_date=promise_date,promised_amount=promise_amount
+    )
+    db.add(event)
+    audit(db,user,f"collection.{event_type}","invoice",invoice.id,{
+        "promised_date":promise_date.isoformat() if promise_date else None,
+        "promised_amount":str(promise_amount) if promise_amount is not None else None,
+    })
+    db.commit()
+    return RedirectResponse("/collections?message=Collection+activity+saved",303)
 
 @app.get("/customers",response_class=HTMLResponse)
 def customers_page(request:Request,db:Session=Depends(get_db)):
