@@ -39,8 +39,9 @@
       {% if user %}
       <div class="hidden md:flex items-center gap-1 text-sm">
         <a href="/" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Overview</a>
-        <a href="/billing" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Billing</a>
-        <a href="/settings" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Settings</a>
+        <a href="/customers" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Customers</a>
+        <a href="/recurring" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Recurring</a>
+        {% if user.role in ['owner','admin'] %}<a href="/team" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Team</a><a href="/audit" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Audit</a><a href="/billing" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Billing</a><a href="/settings" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Settings</a>{% else %}<a href="/settings" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Settings</a>{% endif %}
       </div>
       <div class="flex items-center gap-2">
         <div class="hidden sm:block text-right mr-2">
