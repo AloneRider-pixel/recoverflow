@@ -1,4 +1,5 @@
 import * as SecureStore from "expo-secure-store";
+
 export const API_URL=(process.env.EXPO_PUBLIC_API_URL||"https://recoverflow-7vnr.onrender.com").replace(/\/$/,"");
 const TOKEN_KEY="recoverflow_access_token";
 async function request(path:string,options:RequestInit={}){
@@ -18,4 +19,8 @@ export async function dashboard(){return request("/api/v1/dashboard");}
 export async function invoices(){return request("/api/v1/invoices");}
 export async function createInvoice(payload:any){return request("/api/v1/invoices",{method:"POST",body:JSON.stringify(payload)});}
 export async function markPaid(id:number){return request("/api/v1/invoices/"+id+"/mark-paid",{method:"POST"});}
+export async function createPaymentLink(id:number){return request("/api/v1/invoices/"+id+"/payment-link",{method:"POST"});}
+export async function sendWhatsapp(id:number){return request("/api/v1/invoices/"+id+"/whatsapp",{method:"POST"});}
+export async function registerNotificationToken(token:string,platform:string){return request("/api/v1/notifications/register",{method:"POST",body:JSON.stringify({token,platform})});}
+export async function testNotification(){return request("/api/v1/notifications/test",{method:"POST"});}
 export async function hasToken(){return !!(await SecureStore.getItemAsync(TOKEN_KEY));}
