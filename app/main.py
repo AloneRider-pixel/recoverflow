@@ -677,6 +677,23 @@ def payment(invoice_id:int,request:Request,csrf:str=Form(...),db:Session=Depends
     user,workspace=require_role(request,db,"owner","admin","finance","collector"); check_csrf(request,csrf)
     invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.workspace_id==workspace.id))
     if not invoice: raise HTTPException(404,"Invoice not found")
+
+    # Reuse the newest usable link for this invoice instead of creating a new
+    # Razorpay link on every click. This prevents duplicate links and API
+    # throttling when a user retries the same action.
+    existing=db.scalar(
+        select(PaymentLink)
+        .where(
+            PaymentLink.invoice_id==invoice.id,
+            PaymentLink.owner_id==user.id,
+            PaymentLink.amount_paise==int(invoice.balance*100),
+            PaymentLink.status.notin_(["paid","cancelled","expired"]),
+        )
+        .order_by(PaymentLink.created_at.desc())
+    )
+    if existing:
+        return RedirectResponse(f"/invoices/{invoice.id}?message=Payment+link+ready",303)
+
     result=create_payment_link(user,invoice)
     link=PaymentLink(owner_id=user.id,invoice_id=invoice.id,provider_link_id=result["id"],short_url=result["short_url"],amount_paise=int(result["amount"]),status=result.get("status","created"))
     db.add(link); audit(db,user,"payment_link.created","payment_link",link.id,{"invoice_id":invoice.id}); db.commit()
