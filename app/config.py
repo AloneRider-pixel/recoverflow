@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     environment: str = "production"
     public_base_url: str = ""
     sales_email: str = ""
+    legal_entity_name: str = ""
+    support_email: str = ""
+    business_address: str = ""
+    jurisdiction: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()
