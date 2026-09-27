@@ -29,7 +29,7 @@ def _razorpay_request(method, path, key_id, key_secret, payload=None):
 
 def create_payment_link(user, invoice):
     key_id, key_secret = merchant_keys(user)
-    if invoice.balance < 100:
+    if invoice.balance < 1:
         raise HTTPException(400, "Razorpay Payment Links require at least ₹1.")
     payload = {
         "amount": int(invoice.balance * 100),
