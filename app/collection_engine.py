@@ -109,7 +109,8 @@ def _schedule(state: ActionState) -> ActionState:
         state["next_action_at"] = datetime.combine(today + timedelta(days=1), time(hour=10))
         return state
 
-    state["next_action_at"] = now
+    # Use a stable daily due time so refreshing the dashboard cannot create duplicate tasks.
+    state["next_action_at"] = datetime.combine(today, time(hour=9))
     return state
 
 
