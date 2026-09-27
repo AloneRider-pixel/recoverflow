@@ -7,7 +7,7 @@ import * as api from "./src/api";
 import {attachNotificationListeners,registerPushNotifications} from "./src/notifications";
 
 type Tab="home"|"invoices"|"add"|"customers"|"more";
-type Invoice={id:number;invoice_number:string;customer_name:string;amount:string;paid_amount:string;balance:string;due_date:string;status:string;days_overdue:number;aging_bucket:string};
+type Invoice={id:number;invoice_number:string;customer_name:string;phone?:string;amount:string;paid_amount:string;balance:string;due_date:string;status:string;days_overdue:number;aging_bucket:string};
 
 function Loader(){return <View style={styles.loader}><ActivityIndicator color={colors.cyan}/><Text style={styles.muted}>Loading RecoverFlow…</Text></View>}
 function Money({value,large=false}:{value:string|number;large?:boolean}){
