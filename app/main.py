@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 import csv, io, json, urllib.parse, secrets, hashlib
 from fastapi import FastAPI, Depends, Form, Request, UploadFile, File, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -693,4 +693,4 @@ def export_invoices(request:Request,db:Session=Depends(get_db)):
     output=io.StringIO(); writer=csv.writer(output)
     writer.writerow(["invoice_number","customer_name","phone","email","amount","paid_amount","balance","issue_date","due_date","status","gstin","place_of_supply","tax_rate","tax_amount","tds_amount"])
     for i in invoices: writer.writerow([i.invoice_number,i.customer_name,i.phone or "",i.email or "",i.amount,i.paid_amount,i.balance,i.issue_date,i.due_date,i.status,i.gstin or "",i.place_of_supply or "",i.tax_rate or "",i.tax_amount or "",i.tds_amount or ""])
-    return JSONResponse(content={"filename":"recoverflow-invoices.csv","csv":output.getvalue()})
+    return PlainTextResponse(output.getvalue(),media_type="text/csv",headers={"Content-Disposition":"attachment; filename=\"recoverflow-invoices.csv\""})
