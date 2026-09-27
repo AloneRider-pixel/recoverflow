@@ -12,7 +12,7 @@ from .db import get_db, init_db
 from .models import User, Invoice, PaymentLink, ReminderLog, BillingPlan, DeviceToken, Workspace, TeamMember, TeamInvite, AuditLog, RecurringInvoice, Lead
 from .security import set_session, clear_session, read_session, new_csrf, encrypt, decrypt, make_api_token, read_api_token, make_public_invoice_token, read_public_invoice_token, make_statement_token, read_statement_token, make_api_token, read_api_token
 from .password import hash_password, verify_password
-from .integrations import create_payment_link, send_whatsapp_template, verify_webhook, merchant_keys, webhook_secret, platform_request, send_expo_push
+from .integrations import create_payment_link, send_whatsapp_template, verify_webhook, merchant_keys, webhook_secret, platform_request, send_expo_push, standard_checkout_keys, standard_checkout_client, create_standard_checkout_order
 
 # Initialize all application tables after model imports.
 init_db()
@@ -355,7 +355,140 @@ def public_invoice_pay(request:Request,token:str,db:Session=Depends(get_db)):
     if not invoice or invoice.balance<=0: raise HTTPException(404,"Payment page not found")
     link=db.scalar(select(PaymentLink).where(PaymentLink.invoice_id==invoice.id).order_by(PaymentLink.created_at.desc()))
     owner=db.get(User,invoice.owner_id)
-    return templates.TemplateResponse("pay.html",{"request":request,"invoice":invoice,"payment_link":link,"money":money,"company_name":owner.company_name if owner else "Business"})
+    return templates.TemplateResponse(
+        "pay.html",
+        {
+            "request":request,
+            "token":token,
+            "invoice":invoice,
+            "payment_link":link,
+            "money":money,
+            "company_name":owner.company_name if owner else "Business",
+        },
+    )
+
+
+@app.post("/api/create-order")
+async def create_standard_checkout_order_api(request:Request,db:Session=Depends(get_db)):
+    try:
+        data=await request.json()
+    except Exception:
+        raise HTTPException(400,"Invalid JSON")
+
+    token=str(data.get("token","")).strip()
+    payload=read_public_invoice_token(token)
+    if not payload or not payload.get("invoice_id"):
+        raise HTTPException(404,"Payment page not found")
+
+    invoice=db.get(Invoice,int(payload["invoice_id"]))
+    if not invoice or invoice.balance<=0:
+        raise HTTPException(404,"Payment page not found")
+
+    owner=db.get(User,invoice.owner_id)
+    if not owner:
+        raise HTTPException(404,"Payment owner not found")
+
+    amount_paise=int(invoice.balance*100)
+    if amount_paise < 100:
+        raise HTTPException(400,"Razorpay Checkout requires an amount of at least ₹1.")
+
+    try:
+        result=create_standard_checkout_order(owner,invoice)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        message=str(exc)
+        if "authentication" in message.lower() or "unauthorized" in message.lower():
+            raise HTTPException(401,"Razorpay authentication failed. Check the configured API credentials.")
+        raise HTTPException(500,f"Unable to create Razorpay order: {message}")
+
+    return {
+        "order_id":result["id"],
+        "amount":int(result["amount"]),
+        "currency":result["currency"],
+        "key_id":standard_checkout_keys(owner)[0],
+    }
+
+
+@app.post("/api/verify-payment")
+async def verify_standard_checkout_payment(request:Request,db:Session=Depends(get_db)):
+    try:
+        data=await request.json()
+    except Exception:
+        raise HTTPException(400,"Invalid JSON")
+
+    token=str(data.get("token","")).strip()
+    order_id=str(data.get("razorpay_order_id","")).strip()
+    payment_id=str(data.get("razorpay_payment_id","")).strip()
+    signature=str(data.get("razorpay_signature","")).strip()
+
+    if not token or not order_id or not payment_id or not signature:
+        raise HTTPException(400,"Missing payment verification fields")
+
+    payload=read_public_invoice_token(token)
+    if not payload or not payload.get("invoice_id"):
+        raise HTTPException(404,"Payment page not found")
+
+    invoice=db.get(Invoice,int(payload["invoice_id"]))
+    if not invoice:
+        raise HTTPException(404,"Invoice not found")
+
+    owner=db.get(User,invoice.owner_id)
+    if not owner:
+        raise HTTPException(404,"Payment owner not found")
+
+    try:
+        client,key_id,key_secret=standard_checkout_client(owner)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500,f"Unable to initialize Razorpay verification: {exc}")
+
+    import hmac
+    generated_signature=hmac.new(
+        key_secret.encode(),
+        f"{order_id}|{payment_id}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not hmac.compare_digest(generated_signature,signature):
+        raise HTTPException(400,"Payment signature verification failed")
+
+    expected_amount=int(invoice.balance*100)
+
+    try:
+        order=client.order.fetch(order_id)
+        notes=order.get("notes") or {}
+        if str(notes.get("recoverflow_invoice_id","")) != str(invoice.id):
+            raise HTTPException(400,"Order does not belong to this invoice")
+        if int(order.get("amount",0)) != expected_amount:
+            raise HTTPException(400,"Order amount does not match the invoice")
+
+        payment=client.payment.fetch(payment_id)
+        if payment.get("order_id") != order_id:
+            raise HTTPException(400,"Payment does not belong to this order")
+        if payment.get("status") != "captured":
+            raise HTTPException(400,"Payment signature is valid, but the payment is not captured yet.")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        message=str(exc)
+        if "authentication" in message.lower() or "unauthorized" in message.lower():
+            raise HTTPException(401,"Razorpay authentication failed. Check the configured API credentials.")
+        raise HTTPException(500,f"Unable to confirm Razorpay payment: {message}")
+
+    invoice.paid_amount=invoice.amount
+    invoice.status="paid"
+    audit(db,owner,"invoice.paid_via_checkout","invoice",invoice.id,{"order_id":order_id,"payment_id":payment_id})
+    db.commit()
+
+    return {
+        "success":True,
+        "invoice_id":invoice.id,
+        "invoice_number":invoice.invoice_number,
+        "payment_id":payment_id,
+        "order_id":order_id,
+    }
 
 @app.post("/api/v1/invoices/{invoice_id}/mark-paid")
 def api_mark_paid(invoice_id:int,request:Request,db:Session=Depends(get_db)):
