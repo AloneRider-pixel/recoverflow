@@ -297,11 +297,17 @@ def new_invoice(request:Request,db:Session=Depends(get_db)):
 @app.post("/invoices/new")
 def create_invoice(request:Request,csrf:str=Form(...),invoice_number:str=Form(...),customer_name:str=Form(...),phone:str=Form(""),email:str=Form(""),amount:str=Form(...),paid_amount:str=Form("0"),issue_date:str=Form(...),due_date:str=Form(...),gstin:str=Form(""),place_of_supply:str=Form(""),tax_rate:str=Form(""),tax_amount:str=Form(""),tds_amount:str=Form(""),db:Session=Depends(get_db)):
     user=require_user(request,db); check_csrf(request,csrf)
-    try: amount_d,paid_d=Decimal(amount),Decimal(paid_amount)
-    except InvalidOperation: raise HTTPException(400,"Invalid amount")
-    if amount_d<=0 or paid_d<0 or paid_d>amount_d: raise HTTPException(400,"Invalid payment values")
+    try:
+        amount_d,paid_d=Decimal(amount),Decimal(paid_amount)
+        tax_d=Decimal(tax_amount) if tax_amount.strip() else None
+        tax_rate_d=Decimal(tax_rate) if tax_rate.strip() else None
+        tds_d=Decimal(tds_amount) if tds_amount.strip() else None
+    except InvalidOperation:
+        raise HTTPException(400,"Invalid amount, tax or TDS values")
+    if amount_d<=0 or paid_d<0 or paid_d>amount_d or (tax_rate_d is not None and tax_rate_d<0) or (tax_d is not None and tax_d<0) or (tds_d is not None and tds_d<0):
+        raise HTTPException(400,"Invalid invoice values")
     if db.scalar(select(Invoice).where(Invoice.invoice_number==invoice_number.strip())): raise HTTPException(400,"Invoice number already exists")
-    i=Invoice(owner_id=user.id,invoice_number=invoice_number.strip(),customer_name=customer_name.strip(),phone=phone.strip() or None,email=email.strip() or None,amount=amount_d,paid_amount=paid_d,issue_date=date.fromisoformat(issue_date),due_date=date.fromisoformat(due_date),status="paid" if paid_d>=amount_d else "partially_paid" if paid_d>0 else "unpaid",gstin=gstin.strip() or None,place_of_supply=place_of_supply.strip() or None,tax_rate=Decimal(tax_rate) if tax_rate.strip() else None,tax_amount=Decimal(tax_amount) if tax_amount.strip() else None,tds_amount=Decimal(tds_amount) if tds_amount.strip() else None)
+    i=Invoice(owner_id=user.id,invoice_number=invoice_number.strip(),customer_name=customer_name.strip(),phone=phone.strip() or None,email=email.strip() or None,amount=amount_d,paid_amount=paid_d,issue_date=date.fromisoformat(issue_date),due_date=date.fromisoformat(due_date),status="paid" if paid_d>=amount_d else "partially_paid" if paid_d>0 else "unpaid",gstin=gstin.strip() or None,place_of_supply=place_of_supply.strip() or None,tax_rate=tax_rate_d,tax_amount=tax_d,tds_amount=tds_d)
     db.add(i);db.commit();return RedirectResponse("/",303)
 
 @app.post("/invoices/import")
@@ -327,7 +333,8 @@ def invoice_detail(request:Request,invoice_id:int,tone:str="friendly",db:Session
     latest=db.scalar(select(PaymentLink).where(PaymentLink.invoice_id==invoice.id,PaymentLink.owner_id==user.id).order_by(PaymentLink.created_at.desc()))
     digits="".join(ch for ch in (invoice.phone or "") if ch.isdigit())
     wa=f"https://wa.me/{digits}?text={urllib.parse.quote(msg)}" if digits else None
-    return templates.TemplateResponse("invoice_detail.html",{"request":request,"user":user,"csrf":csrf_for(request),"invoice":invoice,"message":msg,"tone":tone,"wa_url":wa,"money":money,"payment_link":latest})
+    pay_url=str(request.base_url).rstrip("/")+"/pay/"+make_public_invoice_token(invoice.id)
+    return templates.TemplateResponse("invoice_detail.html",{"request":request,"user":user,"csrf":csrf_for(request),"invoice":invoice,"message":msg,"tone":tone,"wa_url":wa,"money":money,"payment_link":latest,"pay_url":pay_url})
 
 @app.post("/invoices/{invoice_id}/payment")
 def payment(invoice_id:int,request:Request,csrf:str=Form(...),db:Session=Depends(get_db)):
