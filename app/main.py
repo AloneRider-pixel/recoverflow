@@ -666,7 +666,7 @@ def invoice_detail(request:Request,invoice_id:int,tone:str="friendly",db:Session
     invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.workspace_id==workspace.id))
     if not invoice: raise HTTPException(404,"Invoice not found")
     msg=ai_message(invoice,tone) or build_message(invoice,tone)
-    latest=db.scalar(select(PaymentLink).where(PaymentLink.invoice_id==invoice.id).order_by(PaymentLink.created_at.desc()))
+    latest=db.scalar(select(PaymentLink).where(PaymentLink.invoice_id==invoice.id,PaymentLink.owner_id==user.id).order_by(PaymentLink.created_at.desc()))
     digits="".join(ch for ch in (invoice.phone or "") if ch.isdigit())
     wa=f"https://wa.me/{digits}?text={urllib.parse.quote(msg)}" if digits else None
     pay_url=str(request.base_url).rstrip("/")+"/pay/"+make_public_invoice_token(invoice.id)
