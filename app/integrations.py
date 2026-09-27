@@ -1,4 +1,5 @@
 import hashlib, hmac, json
+import razorpay
 import httpx
 from fastapi import HTTPException
 from .config import settings
@@ -91,6 +92,55 @@ def send_whatsapp_template(user, invoice, payment_url=None):
     data=r.json()
     messages=data.get("messages") or []
     return messages[0].get("id") if messages else None
+
+def standard_checkout_keys(user=None):
+    """
+    Prefer workspace-scoped merchant credentials for invoice checkout.
+    Fall back to global RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET for single-merchant
+    deployments and test environments.
+    """
+    if user is not None:
+        key_id, key_secret = merchant_keys(user)
+        if key_id and key_secret:
+            return key_id, key_secret
+    return settings.razorpay_key_id, settings.razorpay_key_secret
+
+
+def standard_checkout_client(user=None):
+    key_id, key_secret = standard_checkout_keys(user)
+    if not key_id or not key_secret:
+        raise HTTPException(400, "Razorpay Standard Checkout is not configured.")
+    client = razorpay.Client(auth=(key_id, key_secret))
+    client.set_app_details({"title": "RecoverFlow", "version": "1.0.0"})
+    return client, key_id, key_secret
+
+
+def create_standard_checkout_order(user, invoice):
+    client, _, _ = standard_checkout_client(user)
+    amount_paise = int(invoice.balance * 100)
+    if amount_paise < 100:
+        raise HTTPException(400, "Razorpay Checkout requires an amount of at least ₹1.")
+    receipt = f"RF-{invoice.id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    return client.order.create(data={
+        "amount": amount_paise,
+        "currency": "INR",
+        "receipt": receipt,
+        "notes": {
+            "recoverflow_invoice_id": str(invoice.id),
+            "recoverflow_user_id": str(user.id),
+        },
+    })
+
+
+def fetch_standard_checkout_order(user, order_id):
+    client, _, _ = standard_checkout_client(user)
+    return client.order.fetch(order_id)
+
+
+def fetch_standard_checkout_payment(user, payment_id):
+    client, _, _ = standard_checkout_client(user)
+    return client.payment.fetch(payment_id)
+
 
 def platform_keys():
     return settings.razorpay_platform_key_id, settings.razorpay_platform_key_secret
