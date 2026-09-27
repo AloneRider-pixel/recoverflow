@@ -223,6 +223,125 @@ def collection_queue(invoices, events=None):
     rows.sort(key=lambda r:(-r["score"], -float(r["invoice"].balance), r["invoice"].due_date))
     return rows
 
+def parse_amount_from_text(text_value, default_amount):
+    import re
+    matches=re.findall(r'(?i)(?:₹\\s*)?([0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(lakh|lac|l|crore|cr|k)?', text_value or "")
+    if not matches:
+        return Decimal(str(default_amount))
+    raw, unit=matches[0]
+    try:
+        value=Decimal(raw.replace(",",""))
+    except InvalidOperation:
+        return Decimal(str(default_amount))
+    unit=unit.lower()
+    if unit in {"lakh","lac","l"}: value*=Decimal("100000")
+    elif unit in {"crore","cr"}: value*=Decimal("10000000")
+    elif unit=="k": value*=Decimal("1000")
+    return value
+
+def parse_date_from_text(text_value):
+    import re
+    from datetime import datetime as _dt
+    today=date.today()
+    text_lower=(text_value or "").lower()
+    named={
+        "today":today,
+        "tomorrow":today+timedelta(days=1),
+        "day after tomorrow":today+timedelta(days=2),
+        "monday":None,"tuesday":None,"wednesday":None,"thursday":None,"friday":None,"saturday":None,"sunday":None,
+    }
+    for word,target in named.items():
+        if word in text_lower and target:
+            return target
+    for fmt in ("%d/%m/%Y","%d-%m-%Y","%Y-%m-%d","%d %b %Y","%d %B %Y"):
+        m=re.search(r'\\b\\d{1,2}[ /-](?:\\d{1,2}|[A-Za-z]{3,9})[ /-]\\d{2,4}\\b', text_value or "")
+        if not m: continue
+        try: return _dt.strptime(m.group(0),fmt).date()
+        except ValueError: pass
+    weekday_map={d:i for i,d in enumerate(["monday","tuesday","wednesday","thursday","friday","saturday","sunday"])}
+    for word,idx in weekday_map.items():
+        if word in text_lower:
+            delta=(idx-today.weekday())%7
+            if delta==0: delta=7
+            return today+timedelta(days=delta)
+    return None
+
+def analyze_collection_reply(invoice, reply_text):
+    text_value=(reply_text or "").strip()
+    if not text_value:
+        raise HTTPException(400,"Customer reply is required")
+
+    if settings.openai_api_key:
+        try:
+            client=OpenAI(api_key=settings.openai_api_key)
+            prompt=f"""Classify this Indian B2B customer collection reply. Return JSON only with keys:
+event_type: one of contact, promise, dispute, payment_claimed, note
+promised_date: YYYY-MM-DD or null
+promised_amount: number or null
+confidence: number from 0 to 1
+reason: max 120 characters
+
+Invoice balance: {invoice.balance}
+Today: {date.today().isoformat()}
+Customer reply: {text_value[:3000]}
+
+Interpret phrases such as Friday, tomorrow, next week, paid, already transferred, TDS, GST, invoice issue, will pay, payment done. Do not invent a date when ambiguous. Do not infer payment completion without the customer actually claiming payment."""
+            result=client.chat.completions.create(
+                model=settings.openai_model,
+                response_format={"type":"json_object"},
+                messages=[{"role":"user","content":prompt}],
+                temperature=0.0,
+            )
+            data=json.loads(result.choices[0].message.content or "{}")
+            event_type=str(data.get("event_type","note")).lower().strip()
+            if event_type not in {"contact","promise","dispute","payment_claimed","note"}:
+                event_type="note"
+            promise_date=None
+            if data.get("promised_date"):
+                try: promise_date=date.fromisoformat(str(data["promised_date"]))
+                except ValueError: promise_date=None
+            promise_amount=None
+            if data.get("promised_amount") is not None:
+                try: promise_amount=Decimal(str(data["promised_amount"]))
+                except InvalidOperation: promise_amount=None
+            confidence=Decimal(str(data.get("confidence",0)))
+            confidence=max(Decimal("0"),min(confidence,Decimal("1")))
+            if event_type=="promise" and promise_amount is None:
+                promise_amount=invoice.balance
+            return {
+                "event_type":event_type,
+                "promised_date":promise_date,
+                "promised_amount":promise_amount,
+                "confidence":float(confidence),
+                "reason":str(data.get("reason","")).strip()[:120] or "Classified from customer reply.",
+                "source":"ai",
+            }
+        except Exception:
+            pass
+
+    lower=text_value.lower()
+    dispute_terms=("gst","tds","wrong invoice","invoice issue","incorrect","dispute","not received","credit note")
+    paid_terms=("paid","payment done","transferred","sent the payment","already paid","payment has been made")
+    promise_terms=("will pay","pay on","pay by","paying on","payment on","payment by","friday","tomorrow","next week","next monday")
+    if any(term in lower for term in paid_terms):
+        event_type="payment_claimed"
+    elif any(term in lower for term in dispute_terms):
+        event_type="dispute"
+    elif any(term in lower for term in promise_terms):
+        event_type="promise"
+    else:
+        event_type="note"
+    pdate=parse_date_from_text(text_value) if event_type=="promise" else None
+    pamount=parse_amount_from_text(text_value,invoice.balance) if event_type=="promise" else None
+    return {
+        "event_type":event_type,
+        "promised_date":pdate,
+        "promised_amount":pamount,
+        "confidence":0.62 if event_type!="note" else 0.35,
+        "reason":"Rule-based fallback; confirm the extracted outcome before saving.",
+        "source":"rules",
+    }
+
 def session_user(request, db):
     data=read_session(request)
     if not data or not data.get("user_id"):
@@ -417,6 +536,27 @@ async def api_create_collection_event(invoice_id:int,request:Request,db:Session=
     })
     db.commit()
     return {"ok":True,"id":event.id}
+
+
+@app.post("/api/v1/collection-intelligence/analyze")
+async def api_analyze_collection_reply(request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db); ensure_access(user); workspace=workspace_for(user,db)
+    try: data=await request.json()
+    except Exception: raise HTTPException(400,"Invalid JSON")
+    invoice_id=int(data.get("invoice_id",0) or 0)
+    reply=str(data.get("reply","")).strip()
+    invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.workspace_id==workspace.id))
+    if not invoice: raise HTTPException(404,"Invoice not found")
+    result=analyze_collection_reply(invoice,reply)
+    return {
+        "ok":True,
+        "event_type":result["event_type"],
+        "promised_date":result["promised_date"].isoformat() if result["promised_date"] else None,
+        "promised_amount":str(result["promised_amount"]) if result["promised_amount"] is not None else None,
+        "confidence":result["confidence"],
+        "reason":result["reason"],
+        "source":result["source"],
+    }
 
 @app.get("/api/v1/customers")
 def api_customers(request:Request,db:Session=Depends(get_db)):
@@ -957,11 +1097,12 @@ def invoice_detail(request:Request,invoice_id:int,tone:str="friendly",db:Session
     invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.workspace_id==workspace.id))
     if not invoice: raise HTTPException(404,"Invoice not found")
     msg=ai_message(invoice,tone) or build_message(invoice,tone)
+    collection_events=list(db.scalars(select(CollectionEvent).where(CollectionEvent.invoice_id==invoice.id,CollectionEvent.workspace_id==workspace.id).order_by(CollectionEvent.created_at.desc()).limit(50)).all())
     latest=db.scalar(select(PaymentLink).where(PaymentLink.invoice_id==invoice.id,PaymentLink.owner_id==user.id).order_by(PaymentLink.created_at.desc()))
     digits="".join(ch for ch in (invoice.phone or "") if ch.isdigit())
     wa=f"https://wa.me/{digits}?text={urllib.parse.quote(msg)}" if digits else None
     pay_url=str(request.base_url).rstrip("/")+"/pay/"+make_public_invoice_token(invoice.id)
-    return templates.TemplateResponse("invoice_detail.html",{"request":request,"user":user,"csrf":csrf_for(request),"invoice":invoice,"message":msg,"tone":tone,"wa_url":wa,"money":money,"payment_link":latest,"pay_url":pay_url,**commercial_context(user)})
+    return templates.TemplateResponse("invoice_detail.html",{"request":request,"user":user,"csrf":csrf_for(request),"invoice":invoice,"message":msg,"tone":tone,"wa_url":wa,"money":money,"payment_link":latest,"pay_url":pay_url,"collection_events":collection_events,**commercial_context(user)})
 
 @app.post("/invoices/{invoice_id}/payment")
 def payment(invoice_id:int,request:Request,csrf:str=Form(...),db:Session=Depends(get_db)):
@@ -1292,6 +1433,26 @@ def collections_page(request:Request,db:Session=Depends(get_db)):
         "outstanding":sum((i.balance for i in invoices),Decimal("0")),
         "overdue":overdue,"due_7":due_7,"promises":promises,"broken":broken,
         "money":money,"message":request.query_params.get("message",""),"error":request.query_params.get("error",""),**commercial_context(user)
+    })
+
+
+@app.post("/collections/{invoice_id}/analyze")
+async def analyze_collection_reply_page(
+    invoice_id:int,request:Request,csrf:str=Form(...),reply:str=Form(...),
+    db:Session=Depends(get_db)
+):
+    user,workspace=require_role(request,db,"owner","admin","finance","collector"); check_csrf(request,csrf)
+    invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.workspace_id==workspace.id))
+    if not invoice: raise HTTPException(404,"Invoice not found")
+    result=analyze_collection_reply(invoice,reply)
+    return JSONResponse({
+        "ok":True,
+        "event_type":result["event_type"],
+        "promised_date":result["promised_date"].isoformat() if result["promised_date"] else "",
+        "promised_amount":str(result["promised_amount"]) if result["promised_amount"] is not None else "",
+        "confidence":result["confidence"],
+        "reason":result["reason"],
+        "source":result["source"],
     })
 
 @app.post("/collections/{invoice_id}/event")
