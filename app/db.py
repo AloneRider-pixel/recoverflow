@@ -10,6 +10,7 @@ class Base(DeclarativeBase):
     pass
 
 def init_db():
+    # Called only after all SQLAlchemy models have been imported.
     Base.metadata.create_all(bind=engine)
     inspector = inspect(engine)
     if "invoices" in inspector.get_table_names():
@@ -18,9 +19,9 @@ def init_db():
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE invoices ADD COLUMN owner_id INTEGER"))
 
-init_db()
-
 def get_db():
     db=SessionLocal()
-    try: yield db
-    finally: db.close()
+    try:
+        yield db
+    finally:
+        db.close()
