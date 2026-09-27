@@ -45,6 +45,11 @@ class Invoice(Base):
     due_date: Mapped[date] = mapped_column(Date, index=True)
     status: Mapped[str] = mapped_column(String(30), default="unpaid", index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    gstin: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    place_of_supply: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    tax_rate: Mapped[Decimal | None] = mapped_column(Numeric(6,2), nullable=True)
+    tax_amount: Mapped[Decimal | None] = mapped_column(Numeric(14,2), nullable=True)
+    tds_amount: Mapped[Decimal | None] = mapped_column(Numeric(14,2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     @property
     def balance(self): return max(Decimal("0"), self.amount - self.paid_amount)
@@ -77,3 +82,12 @@ class ReminderLog(Base):
     provider_message_id: Mapped[str | None] = mapped_column(String(150), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     __table_args__ = (UniqueConstraint("invoice_id","stage","channel",name="uq_reminder_invoice_stage_channel"),)
+
+class DeviceToken(Base):
+    __tablename__ = "device_tokens"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    token: Mapped[str] = mapped_column(String(500), unique=True, index=True)
+    platform: Mapped[str] = mapped_column(String(20), default="unknown")
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
