@@ -17,6 +17,12 @@ class ActionState(TypedDict, total=False):
     promised_date: date | None
     last_contact_at: datetime | None
     due_date: date
+    score: int
+    priority: str
+    action_type: str
+    recommended_action: str
+    reason: str
+    next_action_at: datetime
 
 
 def _score(state: ActionState) -> ActionState:
