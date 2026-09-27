@@ -91,3 +91,55 @@ class DeviceToken(Base):
     platform: Mapped[str] = mapped_column(String(20), default="unknown")
     active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+class Workspace(Base):
+    __tablename__ = "workspaces"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(180))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+class TeamMember(Base):
+    __tablename__ = "team_members"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    role: Mapped[str] = mapped_column(String(30), default="viewer")
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    __table_args__ = (UniqueConstraint("workspace_id","user_id",name="uq_team_workspace_user"),)
+
+class TeamInvite(Base):
+    __tablename__ = "team_invites"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    email: Mapped[str] = mapped_column(String(180), index=True)
+    role: Mapped[str] = mapped_column(String(30), default="viewer")
+    token_digest: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    event: Mapped[str] = mapped_column(String(80), index=True)
+    entity_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    entity_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+class RecurringInvoice(Base):
+    __tablename__ = "recurring_invoices"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    customer_name: Mapped[str] = mapped_column(String(180))
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14,2))
+    cadence: Mapped[str] = mapped_column(String(20), default="monthly")
+    next_issue_date: Mapped[date] = mapped_column(Date, index=True)
+    due_days: Mapped[int] = mapped_column(Integer, default=7)
+    active: Mapped[bool] = mapped_column(default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
