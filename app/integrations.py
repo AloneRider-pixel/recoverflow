@@ -1,4 +1,4 @@
-import hashlib, hmac, json
+import hashlib, hmac, json, secrets
 from datetime import datetime
 import razorpay
 import httpx
@@ -38,7 +38,7 @@ def create_payment_link(user, invoice):
         "currency": "INR",
         "accept_partial": True,
         "description": f"Invoice {invoice.invoice_number} - {invoice.customer_name}",
-        "reference_id": f"RF-{user.id}-{invoice.id}",
+        "reference_id": f"RF-{user.id}-{invoice.id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}",
         "customer": {
             "name": invoice.customer_name,
             "email": invoice.email or "",
