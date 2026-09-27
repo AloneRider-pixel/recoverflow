@@ -1,28 +1,76 @@
 # RecoverFlow
 
-B2B receivables management for SMBs.
+RecoverFlow is a receivables operations platform for SMBs: bring invoices into one workspace, surface overdue cash, send follow-ups, create payment links and close invoices faster.
 
-## Included
-- Multi-account login with isolated invoice data
-- CSV + manual invoice creation
-- Demo data
-- Razorpay Payment Links integration + signed webhook processing
-- WhatsApp Cloud API template sending + reminder logging
-- Daily automatic reminder endpoint
-- Razorpay subscription billing
-- Optional OpenAI copy generation (not required)
+## Product surfaces
+
+### Web
+- Professional public marketing site at `/` when signed out
+- Authenticated receivables dashboard
+- Invoice creation + CSV import
+- Customer follow-up workspace
+- Razorpay payment links
+- WhatsApp reminders
+- Subscription billing
+- Integration settings
+
+### Mobile
+- React Native + Expo client under `/mobile`
+- Shared FastAPI + PostgreSQL backend
+- Secure bearer-token storage with Expo SecureStore
+- Mobile dashboard, invoice queue, invoice creation and account settings
+- One codebase for iOS and Android
+
+## API
+
+Mobile and future web clients use the versioned API:
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/register`
+- `GET /api/v1/me`
+- `GET /api/v1/dashboard`
+- `GET /api/v1/invoices`
+- `POST /api/v1/invoices`
+- `POST /api/v1/invoices/{id}/mark-paid`
+
+The API uses signed bearer tokens. Browser sessions remain isolated from API authentication.
+
+## Backend
+
+- FastAPI
+- SQLAlchemy
+- PostgreSQL
+- scrypt password hashing
+- signed sessions
+- encrypted integration credentials
+- Razorpay + WhatsApp integrations
+- optional OpenAI copy generation
 
 ## Production environment
-- DATABASE_URL
-- SESSION_SECRET
-- CRON_SECRET
-- WHATSAPP_GRAPH_VERSION when WhatsApp API is enabled
-- RAZORPAY_PLATFORM_KEY_ID / RAZORPAY_PLATFORM_KEY_SECRET for RecoverFlow subscriptions
 
-Business customers configure their own Razorpay and WhatsApp credentials inside Settings → Integrations.
+Set:
+- `DATABASE_URL`
+- `SESSION_SECRET`
+- `CRON_SECRET`
+- `WHATSAPP_GRAPH_VERSION`
+- `RAZORPAY_PLATFORM_KEY_ID`
+- `RAZORPAY_PLATFORM_KEY_SECRET`
+- `RAZORPAY_PLATFORM_WEBHOOK_SECRET` when subscription webhooks are enabled
 
-## Automation
-A GitHub Actions workflow calls the protected reminder endpoint every day at 10:00 AM IST. Add the repository secret RECOVERFLOW_CRON_SECRET with the same value as Render's CRON_SECRET.
+Never commit credentials to GitHub.
 
-## Security
-Never commit API keys to GitHub. Razorpay webhook signatures are verified with HMAC before payment/subscription state updates. Integration secrets stored in the application database are encrypted using a key derived from SESSION_SECRET.
+## Mobile development
+
+From `mobile/`:
+`npm install`
+`npx expo start`
+
+The client defaults to the production RecoverFlow API and can be overridden with `EXPO_PUBLIC_API_URL`.
+
+## Deployment
+
+Current backend deployment:
+- Render web service
+- PostgreSQL database
+- automatic deploys from `main`
+
+The mobile client is prepared for Expo Application Services builds using `mobile/eas.json`.
