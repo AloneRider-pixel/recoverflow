@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 import csv,io,urllib.parse
 from fastapi import FastAPI,Depends,Form,Request,UploadFile,File,HTTPException
@@ -34,6 +34,41 @@ def dashboard(request:Request,db:Session=Depends(get_db)):
  inv=list(db.scalars(select(Invoice).order_by(Invoice.due_date.asc())).all())
  out=sum((i.balance for i in inv),Decimal("0")); overdue=sum((i.balance for i in inv if i.days_overdue>0),Decimal("0")); today=sum((i.balance for i in inv if i.balance>0 and i.due_date==date.today()),Decimal("0")); customers=len({i.customer_name for i in inv})
  return templates.TemplateResponse("dashboard.html",{"request":request,"invoices":inv,"outstanding":out,"overdue":overdue,"due_today":today,"customers":customers,"money":money})
+@app.post("/demo/seed")
+def seed_demo(db: Session = Depends(get_db)):
+    today = date.today()
+    samples = [
+        {"invoice_number":"DEMO-001","customer_name":"Apex Industrial Supplies","phone":"919876543210","email":"accounts@apex.example","amount":"84000","paid_amount":"0","days_due":-3},
+        {"invoice_number":"DEMO-002","customer_name":"Northstar Traders","phone":"919812345678","email":"finance@northstar.example","amount":"31500","paid_amount":"5000","days_due":-12},
+        {"invoice_number":"DEMO-003","customer_name":"Himalaya Components","phone":"919998877665","email":"accounts@himalaya.example","amount":"125000","paid_amount":"25000","days_due":-45},
+        {"invoice_number":"DEMO-004","customer_name":"Greenline Services","phone":"919900112233","email":"billing@greenline.example","amount":"18000","paid_amount":"0","days_due":0},
+        {"invoice_number":"DEMO-005","customer_name":"Cedar & Co.","phone":"919811223344","email":"accounts@cedar.example","amount":"46500","paid_amount":"20000","days_due":-6},
+        {"invoice_number":"DEMO-006","customer_name":"Summit Retail Network","phone":"919887766554","email":"finance@summit.example","amount":"22000","paid_amount":"0","days_due":2},
+    ]
+    added = 0
+    for row in samples:
+        if db.scalar(select(Invoice).where(Invoice.invoice_number == row["invoice_number"])):
+            continue
+        amount = Decimal(row["amount"])
+        paid = Decimal(row["paid_amount"])
+        due = today + timedelta(days=row["days_due"])
+        issue = due - timedelta(days=30)
+        db.add(Invoice(
+            invoice_number=row["invoice_number"],
+            customer_name=row["customer_name"],
+            phone=row["phone"],
+            email=row["email"],
+            amount=amount,
+            paid_amount=paid,
+            issue_date=issue,
+            due_date=due,
+            status="paid" if paid >= amount else "partially_paid" if paid > 0 else "unpaid",
+            notes="Demo data — safe to delete before production use.",
+        ))
+        added += 1
+    db.commit()
+    return RedirectResponse(f"/?demo_added={added}", status_code=303)
+
 @app.get("/invoices/new",response_class=HTMLResponse)
 def new_invoice(request:Request): return templates.TemplateResponse("invoice_form.html",{"request":request,"today":date.today()})
 @app.post("/invoices/new")
