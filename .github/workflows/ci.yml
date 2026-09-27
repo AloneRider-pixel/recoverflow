@@ -17,6 +17,10 @@ jobs:
         run: pip install -r requirements.txt
       - name: Compile backend
         run: python -m compileall -q app
+      - name: Backend smoke import
+        run: python -c "from app.main import app; print(app.title)"
+      - name: Collection engine smoke test
+        run: python -c "from datetime import date; from decimal import Decimal; from app.collection_engine import recommend_next_action; r=recommend_next_action(overdue=45,balance=Decimal(100000),max_balance=Decimal(200000),promise_broken=True,dispute=False,payment_claimed=False,promised_date=date.today(),last_contact_at=None,due_date=date.today()); assert r["priority"]=="Critical" and r["action_type"]=="CALL"; print(r)"
 
   mobile:
     runs-on: ubuntu-latest
