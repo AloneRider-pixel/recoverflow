@@ -155,3 +155,10 @@ The product does not need to be unique in the sense that nobody else has built i
 - Y Combinator FullSeam: https://www.ycombinator.com/companies/fullseam
 - Y Combinator Rex: https://www.ycombinator.com/companies/rex-inc
 - Y Combinator yBANQ: https://www.ycombinator.com/companies/ybanq
+
+
+## Collections OS v2
+
+The next product layer introduces first-class customers, collection cases and collection tasks. The **Today** workspace turns the receivables queue into a daily operating list with a reason, action type, deadline and outcome log.
+
+The import path now accepts CSV/XLSX and validates the tabular file before database ingestion. See `docs/OSS_STACK.md` for the open-source components selected after reviewing current GitHub projects and licenses.
