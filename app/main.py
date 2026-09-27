@@ -1097,11 +1097,12 @@ def invoice_detail(request:Request,invoice_id:int,tone:str="friendly",db:Session
     invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.workspace_id==workspace.id))
     if not invoice: raise HTTPException(404,"Invoice not found")
     msg=ai_message(invoice,tone) or build_message(invoice,tone)
+    collection_events=list(db.scalars(select(CollectionEvent).where(CollectionEvent.invoice_id==invoice.id,CollectionEvent.workspace_id==workspace.id).order_by(CollectionEvent.created_at.desc()).limit(50)).all())
     latest=db.scalar(select(PaymentLink).where(PaymentLink.invoice_id==invoice.id,PaymentLink.owner_id==user.id).order_by(PaymentLink.created_at.desc()))
     digits="".join(ch for ch in (invoice.phone or "") if ch.isdigit())
     wa=f"https://wa.me/{digits}?text={urllib.parse.quote(msg)}" if digits else None
     pay_url=str(request.base_url).rstrip("/")+"/pay/"+make_public_invoice_token(invoice.id)
-    return templates.TemplateResponse("invoice_detail.html",{"request":request,"user":user,"csrf":csrf_for(request),"invoice":invoice,"message":msg,"tone":tone,"wa_url":wa,"money":money,"payment_link":latest,"pay_url":pay_url,**commercial_context(user)})
+    return templates.TemplateResponse("invoice_detail.html",{"request":request,"user":user,"csrf":csrf_for(request),"invoice":invoice,"message":msg,"tone":tone,"wa_url":wa,"money":money,"payment_link":latest,"pay_url":pay_url,"collection_events":collection_events,**commercial_context(user)})
 
 @app.post("/invoices/{invoice_id}/payment")
 def payment(invoice_id:int,request:Request,csrf:str=Form(...),db:Session=Depends(get_db)):
