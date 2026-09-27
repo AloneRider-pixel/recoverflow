@@ -379,7 +379,7 @@ def seed_demo(request:Request,csrf:str=Form(...),db:Session=Depends(get_db)):
     for num,name,phone,amount,paid,days_due in samples:
         if db.scalar(select(Invoice).where(Invoice.invoice_number==num)): continue
         amount_d=Decimal(amount); paid_d=Decimal(paid); due=today+timedelta(days=days_due)
-        db.add(Invoice(owner_id=user.id,workspace_id=workspace.id,invoice_number=num,customer_name=name),phone=phone,email=None,amount=amount_d,paid_amount=paid_d,issue_date=due-timedelta(days=30),due_date=due,status="paid" if paid_d>=amount_d else "partially_paid" if paid_d>0 else "unpaid",notes="Demo data"))
+        db.add(Invoice(owner_id=user.id,workspace_id=workspace.id,invoice_number=num,customer_name=name,phone=phone,email=None,amount=amount_d,paid_amount=paid_d,issue_date=due-timedelta(days=30),due_date=due,status="paid" if paid_d>=amount_d else "partially_paid" if paid_d>0 else "unpaid",notes="Demo data"))
         added+=1
     db.commit()
     return RedirectResponse(f"/?demo_added={added}",303)
