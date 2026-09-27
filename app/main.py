@@ -154,6 +154,33 @@ async def api_create_invoice(request:Request,db:Session=Depends(get_db)):
     db.add(i); db.commit()
     return {"id":i.id,"invoice_number":i.invoice_number,"balance":str(i.balance),"status":i.status}
 
+@app.get("/api/v1/invoices/{invoice_id}")
+def api_invoice(invoice_id:int,request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db)
+    invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.owner_id==user.id))
+    if not invoice: raise HTTPException(404,"Invoice not found")
+    return {"id":invoice.id,"invoice_number":invoice.invoice_number,"customer_name":invoice.customer_name,"phone":invoice.phone,"email":invoice.email,"amount":str(invoice.amount),"paid_amount":str(invoice.paid_amount),"balance":str(invoice.balance),"issue_date":invoice.issue_date.isoformat(),"due_date":invoice.due_date.isoformat(),"status":invoice.status,"days_overdue":invoice.days_overdue,"aging_bucket":invoice.aging_bucket}
+
+@app.post("/api/v1/invoices/{invoice_id}/payment-link")
+def api_payment_link(invoice_id:int,request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db)
+    invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.owner_id==user.id))
+    if not invoice: raise HTTPException(404,"Invoice not found")
+    result=create_payment_link(user,invoice)
+    link=PaymentLink(owner_id=user.id,invoice_id=invoice.id,provider_link_id=result["id"],short_url=result["short_url"],amount_paise=int(result["amount"]),status=result.get("status","created"))
+    db.add(link); db.commit()
+    return {"ok":True,"url":link.short_url,"status":link.status}
+
+@app.post("/api/v1/invoices/{invoice_id}/whatsapp")
+def api_whatsapp(invoice_id:int,request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db)
+    invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.owner_id==user.id))
+    if not invoice: raise HTTPException(404,"Invoice not found")
+    link=db.scalar(select(PaymentLink).where(PaymentLink.invoice_id==invoice.id,PaymentLink.owner_id==user.id).order_by(PaymentLink.created_at.desc()))
+    message_id=send_whatsapp_template(user,invoice,link.short_url if link else None)
+    db.add(ReminderLog(owner_id=user.id,invoice_id=invoice.id,stage="mobile",channel="whatsapp",status="sent",provider_message_id=message_id)); db.commit()
+    return {"ok":True,"provider_message_id":message_id}
+
 @app.post("/api/v1/invoices/{invoice_id}/mark-paid")
 def api_mark_paid(invoice_id:int,request:Request,db:Session=Depends(get_db)):
     user=api_user(request,db)
