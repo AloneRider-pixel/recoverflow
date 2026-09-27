@@ -1,4 +1,5 @@
 from sqlalchemy import create_engine, inspect, text
+from datetime import datetime, timedelta
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from .config import settings
 
@@ -28,6 +29,8 @@ def init_db():
                 for statement in statements: conn.execute(text(statement))
     user_columns = {c["name"] for c in inspector.get_columns("users")}
     user_statements = []
+    if "trial_started_at" not in user_columns: user_statements.append("ALTER TABLE users ADD COLUMN trial_started_at DATETIME")
+    if "trial_ends_at" not in user_columns: user_statements.append("ALTER TABLE users ADD COLUMN trial_ends_at DATETIME")
     if "workspace_id" not in user_columns: user_statements.append("ALTER TABLE users ADD COLUMN workspace_id INTEGER")
     if "role" not in user_columns: user_statements.append("ALTER TABLE users ADD COLUMN role VARCHAR(30) DEFAULT 'owner'")
     if user_statements:
@@ -38,7 +41,13 @@ def init_db():
     from .models import User, Workspace, TeamMember, Invoice
     with SessionLocal.begin() as db:
         users=list(db.query(User).all())
+        now=datetime.utcnow()
         for user in users:
+            if not user.trial_started_at:
+                user.trial_started_at=user.created_at or now
+            if not user.trial_ends_at:
+                start=user.trial_started_at or now
+                user.trial_ends_at=start+timedelta(days=14)
             if not user.workspace_id:
                 workspace=Workspace(name=user.company_name or "My Business")
                 db.add(workspace); db.flush()

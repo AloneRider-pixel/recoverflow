@@ -141,8 +141,23 @@
         </div>
       </div>
     </header>
+    {% if subscription_state == 'trial' %}
+    <div class="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 pt-3">
+      <div class="rounded-2xl border border-cyan-200/10 bg-cyan-200/[.025] px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div class="text-xs text-slate-400"><span class="font-extrabold text-cyan-100">Free trial</span> · {{trial_days_left}} day{{'' if trial_days_left==1 else 's'}} remaining.</div>
+        <a href="/billing" class="text-xs font-extrabold text-cyan-100">Choose a plan →</a>
+      </div>
+    </div>
+    {% elif subscription_state == 'expired' %}
+    <div class="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 pt-3">
+      <div class="rounded-2xl border border-amber-200/10 bg-amber-200/[.025] px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div class="text-xs text-amber-100"><span class="font-extrabold">Trial ended.</span> Choose a plan to resume the workspace.</div>
+        <a href="/billing" class="text-xs font-extrabold text-amber-100">Review plans →</a>
+      </div>
+    </div>
+    {% endif %}
     <main>{% block content %}{% endblock %}</main>
-    <footer class="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-8 text-[10px] tracking-[.12em] uppercase text-slate-800">RecoverFlow · Receivables operations for modern teams</footer>
+    <footer class="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-8 text-[10px] text-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"><span class="tracking-[.12em] uppercase">RecoverFlow · Receivables operations</span><span class="flex gap-4"><a href="/privacy" class="hover:text-slate-500">Privacy</a><a href="/terms" class="hover:text-slate-500">Terms</a><a href="/refunds" class="hover:text-slate-500">Refunds</a></span></footer>
   </div>
 </div>
 {% else %}

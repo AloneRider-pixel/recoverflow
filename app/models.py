@@ -22,6 +22,8 @@ class User(Base):
     subscription_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     subscription_status: Mapped[str] = mapped_column(String(40), default="trial")
     subscription_plan: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    trial_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 class BillingPlan(Base):

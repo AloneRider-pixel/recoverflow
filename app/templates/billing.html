@@ -2,10 +2,17 @@
 <section class="max-w-[1180px] mx-auto px-4 sm:px-6 lg:px-8 py-7 lg:py-9">
   <div><div class="rf-kicker">Billing</div><h1 class="mt-2 text-3xl md:text-5xl font-black tracking-[-.04em]">Choose your operating level.</h1><p class="mt-3 text-sm text-slate-500">Current status: <span class="text-slate-200 font-bold">{{user.subscription_status}}</span>{% if user.subscription_plan %} · {{user.subscription_plan }}{% endif %}</p></div>
   {% if message %}<div class="mt-5 rounded-2xl border border-cyan-200/10 bg-cyan-200/[.03] px-4 py-3.5 text-sm text-cyan-100">{{message}}</div>{% endif %}
-  <div class="mt-7 grid md:grid-cols-3 gap-4">{% for code,p in plans.items() %}
+  <div class="mt-6 rounded-[24px] border {% if subscription_state=='trial' %}border-cyan-200/10 bg-cyan-200/[.022]{% else %}border-amber-200/10 bg-amber-200/[.02]{% endif %} p-5 sm:p-6">
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div><div class="rf-kicker">{% if subscription_state=='trial' %}Free trial{% else %}Account access{% endif %}</div><div class="mt-2 text-xl font-black">{% if subscription_state=='trial' %}{{trial_days_left}} days remaining{% else %}Choose a plan to reactivate{% endif %}</div><p class="mt-1 text-xs text-slate-600">Your workspace data stays in the same account when you upgrade.</p></div>
+    {% if subscription_state=='active' %}<span class="rf-pill text-emerald-100 border-emerald-300/10 bg-emerald-300/[.035]">Active · {{user.subscription_plan}}</span>{% endif %}
+  </div>
+</div>
+  <div class="mt-5 grid md:grid-cols-3 gap-4">{% for code,p in plans.items() %}
     <div class="relative rounded-[26px] border {% if code=='business' %}border-cyan-200/18 bg-cyan-200/[.025] shadow-glow{% else %}border-white/7 bg-white/[.018]{% endif %} p-6 overflow-hidden">
       {% if code=='business' %}<div class="absolute right-0 top-0 px-3 py-1.5 rounded-bl-2xl text-[9px] font-black tracking-[.12em] bg-cyan-200/10 text-cyan-100">TEAM</div>{% endif %}
       <div class="text-[10px] uppercase tracking-[.18em] text-slate-600 font-black">{{p.name}}</div><div class="mt-3 text-4xl font-black">₹{{'%0.0f'|format(p.amount/100)}}<span class="text-sm font-medium text-slate-600"> / month</span></div><p class="text-sm text-slate-500 mt-3 min-h-10">{{p.description}}</p>
+      <div class="mt-4 space-y-1 text-[11px] text-slate-700"><div>✓ {{plan_limits[code]["invoices"]|int}} invoices</div><div>✓ {{plan_limits[code]["members"]|int}} team member{{"" if plan_limits[code]["members"]==1 else "s"}}</div><div>✓ {{plan_limits[code]["recurring"]|int}} recurring schedules</div></div>
       <form method="post" action="/billing/subscribe" class="mt-7"><input type="hidden" name="csrf" value="{{csrf}}"><input type="hidden" name="plan_code" value="{{code}}"><button class="{% if code=='business' %}rf-btn-primary{% else %}rf-btn-secondary{% endif %} w-full">Continue to checkout</button></form>
     </div>
   {% endfor %}</div>

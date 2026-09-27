@@ -162,7 +162,7 @@ def api_me(request:Request,db:Session=Depends(get_db)):
 
 @app.get("/api/v1/dashboard")
 def api_dashboard(request:Request,db:Session=Depends(get_db)):
-    user=api_user(request,db); workspace=workspace_for(user,db)
+    user=api_user(request,db); ensure_access(user); workspace=workspace_for(user,db)
     invoices=list(db.scalars(select(Invoice).where(Invoice.workspace_id==workspace.id).order_by(Invoice.due_date.asc())).all())
     outstanding=sum((i.balance for i in invoices),Decimal("0")); overdue=sum((i.balance for i in invoices if i.days_overdue>0),Decimal("0")); due_today=sum((i.balance for i in invoices if i.balance>0 and i.due_date==date.today()),Decimal("0")); paid=sum((i.paid_amount for i in invoices),Decimal("0")); invoiced=sum((i.amount for i in invoices),Decimal("0"))
     rate=(paid/invoiced*Decimal("100")) if invoiced else Decimal("0")
@@ -170,7 +170,7 @@ def api_dashboard(request:Request,db:Session=Depends(get_db)):
 
 @app.get("/api/v1/customers")
 def api_customers(request:Request,db:Session=Depends(get_db)):
-    user=api_user(request,db); workspace=workspace_for(user,db)
+    user=api_user(request,db); ensure_access(user); workspace=workspace_for(user,db)
     invoices=list(db.scalars(select(Invoice).where(Invoice.workspace_id==workspace.id)).all()); groups={}
     for i in invoices:
         key=i.customer_name.strip().lower(); g=groups.setdefault(key,{"name":i.customer_name,"phone":i.phone,"email":i.email,"invoice_count":0,"outstanding":Decimal("0"),"overdue":Decimal("0")})
@@ -199,7 +199,7 @@ async def api_team_invite(request:Request,db:Session=Depends(get_db)):
 
 @app.get("/api/v1/recurring")
 def api_recurring(request:Request,db:Session=Depends(get_db)):
-    user=api_user(request,db); workspace=workspace_for(user,db)
+    user=api_user(request,db); ensure_access(user); workspace=workspace_for(user,db)
     items=list(db.scalars(select(RecurringInvoice).where(RecurringInvoice.workspace_id==workspace.id).order_by(RecurringInvoice.active.desc(),RecurringInvoice.next_issue_date.asc())).all())
     return [{"id":r.id,"customer_name":r.customer_name,"phone":r.phone,"email":r.email,"amount":str(r.amount),"cadence":r.cadence,"next_issue_date":r.next_issue_date.isoformat(),"due_days":r.due_days,"active":r.active} for r in items]
 
@@ -228,7 +228,7 @@ def api_toggle_recurring(recurring_id:int,request:Request,db:Session=Depends(get
 
 @app.get("/api/v1/invoices")
 def api_invoices(request:Request,db:Session=Depends(get_db)):
-    user=api_user(request,db); workspace=workspace_for(user,db)
+    user=api_user(request,db); ensure_access(user); workspace=workspace_for(user,db)
     invoices=list(db.scalars(select(Invoice).where(Invoice.workspace_id==workspace.id).order_by(Invoice.due_date.asc())).all())
     return [{"id":i.id,"invoice_number":i.invoice_number,"customer_name":i.customer_name,"phone":i.phone,"email":i.email,"amount":str(i.amount),"paid_amount":str(i.paid_amount),"balance":str(i.balance),"issue_date":i.issue_date.isoformat(),"due_date":i.due_date.isoformat(),"status":i.status,"days_overdue":i.days_overdue,"aging_bucket":i.aging_bucket,"gstin":i.gstin,"place_of_supply":i.place_of_supply,"tax_rate":str(i.tax_rate) if i.tax_rate is not None else None,"tax_amount":str(i.tax_amount) if i.tax_amount is not None else None,"tds_amount":str(i.tds_amount) if i.tds_amount is not None else None} for i in invoices]
 
@@ -354,6 +354,8 @@ def dashboard(request:Request,db:Session=Depends(get_db)):
     user=session_user(request,db)
     if not user:
         return templates.TemplateResponse("welcome.html",{"request":request,"plans":PLANS})
+    if subscription_state(user)=="expired":
+        return RedirectResponse("/billing?message=Your+14-day+trial+has+ended.+Choose+a+plan+to+continue.",303)
     workspace=workspace_for(user,db)
     invoices=list(db.scalars(select(Invoice).where(Invoice.workspace_id==workspace.id).order_by(Invoice.due_date.asc())).all())
     outstanding=sum((i.balance for i in invoices),Decimal("0"))
@@ -480,7 +482,7 @@ def billing(request:Request,db:Session=Depends(get_db)):
 
 @app.post("/billing/subscribe")
 def subscribe(request:Request,csrf:str=Form(...),plan_code:str=Form(...),db:Session=Depends(get_db)):
-    user,workspace=require_role(request,db,"owner","admin"); check_csrf(request,csrf)
+    user,workspace=require_role(request,db,"owner","admin",subscription=False); check_csrf(request,csrf)
     if plan_code not in PLANS: raise HTTPException(400,"Unknown plan")
     if not settings.razorpay_platform_key_id or not settings.razorpay_platform_key_secret:
         return RedirectResponse("/billing?message=Add+RAZORPAY_PLATFORM_KEY_ID+and+RAZORPAY_PLATFORM_KEY_SECRET+in+Render+Environment+first",303)

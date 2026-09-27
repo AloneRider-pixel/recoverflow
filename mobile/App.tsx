@@ -6,7 +6,7 @@ import {colors,radius} from "./src/theme";
 import * as api from "./src/api";
 import {attachNotificationListeners,registerPushNotifications} from "./src/notifications";
 
-type Tab="home"|"invoices"|"add"|"customers"|"more";
+type Tab="home"|"invoices"|"add"|"customers"|"more"|"recurring";
 type Invoice={id:number;invoice_number:string;customer_name:string;phone?:string;amount:string;paid_amount:string;balance:string;due_date:string;status:string;days_overdue:number;aging_bucket:string};
 
 function Loader(){return <View style={styles.loader}><ActivityIndicator color={colors.cyan}/><Text style={styles.muted}>Loading RecoverFlow…</Text></View>}
@@ -69,7 +69,7 @@ function Home({go}:{go:(tab:Tab)=>void}){
     <View style={styles.actionStack}>
       <Action title="Open collection queue" subtitle="Review invoices and payment actions." onPress={()=>go("invoices")} icon="→"/>
       <Action title="Customer portfolio" subtitle="See outstanding exposure by customer." onPress={()=>go("customers")} icon="◉"/>
-      <Action title="Recurring billing" subtitle="Automate repeat invoice creation." onPress={()=>go("more")} icon="↻"/>
+      <Action title="Recurring billing" subtitle="Automate repeat invoice creation." onPress={()=>go("recurring")} icon="↻"/>
     </View>
   </ScrollView>;
 }
@@ -131,25 +131,25 @@ function AddInvoice({onDone}:{onDone:()=>void}){
   </View></ScrollView></KeyboardAvoidingView>;
 }
 
-function Recurring(){
+function Recurring({onBack}:{onBack:()=>void}){
   const [items,setItems]=useState<any[]>([]); const [name,setName]=useState(""); const [amount,setAmount]=useState(""); const [cadence,setCadence]=useState("monthly"); const [loading,setLoading]=useState(true);
   async function load(){setLoading(true);try{setItems(await api.recurring())}catch{}finally{setLoading(false)}}
   useEffect(()=>{load();},[]);
   async function create(){if(!name||!amount){Alert.alert("Missing details","Add customer and amount.");return}try{await api.createRecurring({customer_name:name,amount,cadence,next_issue_date:new Date().toISOString().slice(0,10),due_days:7});setName("");setAmount("");Alert.alert("Schedule created","The recurring billing schedule is active.");load();}catch(e:any){Alert.alert("Could not create",e?.message||"Please try again.");}}
-  return <ScrollView style={styles.screen} contentContainerStyle={styles.content}><Text style={styles.kicker}>AUTOMATED BILLING</Text><Text style={styles.title}>Recurring invoices</Text><Text style={styles.muted}>Turn repeat customer billing into a scheduled workflow.</Text>
+  return <ScrollView style={styles.screen} contentContainerStyle={styles.content}><Pressable onPress={onBack} style={{marginBottom:18}}><Text style={styles.link}>← More</Text></Pressable><Text style={styles.kicker}>AUTOMATED BILLING</Text><Text style={styles.title}>Recurring invoices</Text><Text style={styles.muted}>Turn repeat customer billing into a scheduled workflow.</Text>
     <View style={[styles.card,{marginTop:18}]}><Field label="Customer" value={name} onChangeText={setName} placeholder="Customer name"/><Field label="Amount (INR)" value={amount} onChangeText={setAmount} placeholder="24900" keyboardType="decimal-pad"/><View style={styles.segment}><Pressable onPress={()=>setCadence("weekly")} style={[styles.segmentBtn,cadence==="weekly"&&styles.segmentActive]}><Text style={styles.segmentText}>Weekly</Text></Pressable><Pressable onPress={()=>setCadence("monthly")} style={[styles.segmentBtn,cadence==="monthly"&&styles.segmentActive]}><Text style={styles.segmentText}>Monthly</Text></Pressable><Pressable onPress={()=>setCadence("quarterly")} style={[styles.segmentBtn,cadence==="quarterly"&&styles.segmentActive]}><Text style={styles.segmentText}>Quarterly</Text></Pressable></View><Pressable onPress={create} style={styles.primary}><Text style={styles.primaryText}>Create schedule</Text></Pressable></View>
     <Text style={[styles.kicker,{marginTop:26,marginBottom:10}]}>SCHEDULES</Text>{loading?<Loader/>:items.length?items.map(x=><View key={x.id} style={styles.invoice}><View style={styles.invoiceTop}><View style={{flex:1}}><Text style={styles.invoiceCustomer}>{x.customer_name}</Text><Text style={styles.invoiceNo}>₹{x.amount} · {x.cadence} · next {x.next_issue_date}</Text></View><Text style={[styles.badge,x.active&&styles.badgeActive]}>{x.active?"Active":"Paused"}</Text></View><View style={styles.invoiceBottom}><Text style={styles.smallMuted}>{x.due_days} days to due</Text><Pressable onPress={async()=>{try{await api.toggleRecurring(x.id);load()}catch(e:any){Alert.alert("Could not update",e?.message||"Please try again.");}}}><Text style={styles.link}>{x.active?"Pause":"Resume"}</Text></Pressable></View></View>):<Empty title="No schedules yet" text="Create a recurring invoice schedule above."/>}
   </ScrollView>;
 }
 
-function More({onLogout}:{onLogout:()=>void}){
+function More({onLogout,go}:{onLogout:()=>void;go:(tab:Tab)=>void}){
   const [user,setUser]=useState<any>(null); useEffect(()=>{api.me().then(setUser).catch(()=>{});},[]);
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content}><Text style={styles.kicker}>WORKSPACE</Text><Text style={styles.title}>More</Text><Text style={styles.muted}>Workspace controls and production tools.</Text>
     <View style={[styles.card,{marginTop:18}]}>
       <Text style={styles.label}>Company</Text><Text style={styles.settingValue}>{user?.company_name||"—"}</Text>
       <Text style={styles.label}>Account</Text><Text style={styles.settingValue}>{user?.email||"—"}</Text>
       <Text style={styles.label}>Role</Text><Text style={styles.settingValue}>{user?.role||"—"}</Text>
-      <Text style={styles.label}>Plan</Text><Text style={styles.settingValue}>{user?.subscription_plan||"Free / trial"}</Text>
+      <Text style={styles.label}>Plan</Text><Text style={styles.settingValue}>{user?.subscription_state==="trial"?`Free trial · ${user?.trial_days_left||0} days left`:user?.subscription_plan||"Not active"}</Text><Pressable onPress={()=>go("recurring")} style={styles.secondaryBtn}><Text style={styles.secondaryText}>Recurring invoices</Text></Pressable><Pressable onPress={()=>Linking.openURL("https://recoverflow-7vnr.onrender.com/billing")} style={styles.secondaryBtn}><Text style={styles.secondaryText}>Manage subscription</Text></Pressable>
       <Pressable onPress={async()=>{try{const r=await api.testNotification();Alert.alert("Notification test",r.sent?"Test sent.":"No active device token yet.")}catch(e:any){Alert.alert("Notification test failed",e?.message||"Please try again.");}}} style={styles.secondaryBtn}><Text style={styles.secondaryText}>Test push notifications</Text></Pressable>
       <Pressable onPress={()=>Linking.openURL("https://recoverflow-7vnr.onrender.com")} style={styles.secondaryBtn}><Text style={styles.secondaryText}>Open RecoverFlow web</Text></Pressable>
     </View>
@@ -164,7 +164,7 @@ export default function App(){
   useEffect(()=>{if(authed)registerPushNotifications()},[authed]);
   if(authed===null)return <Loader/>;
   if(!authed)return <Auth onDone={()=>setAuthed(true)}/>;
-  const screen=tab==="home"?<Home go={setTab}/>:tab==="invoices"?<Invoices/>:tab==="add"?<AddInvoice onDone={()=>setTab("invoices")}/>:tab==="customers"?<Customers/>:<More onLogout={()=>setAuthed(false)}/>;
+  const screen=tab==="home"?<Home go={setTab}/>:tab==="invoices"?<Invoices/>:tab==="add"?<AddInvoice onDone={()=>setTab("invoices")}/>:tab==="customers"?<Customers/>:tab==="recurring"?<Recurring onBack={()=>setTab("more")}/>:<More onLogout={()=>setAuthed(false)} go={setTab}/>;
   return <SafeAreaView style={styles.app}><StatusBar style="light"/>{screen}<View style={styles.tabbar}>{(["home","invoices","add","customers","more"] as Tab[]).map(t=><Pressable key={t} onPress={()=>setTab(t)} style={styles.tab}><Text style={[styles.tabIcon,t===tab&&styles.tabActive]}>{t==="home"?"⌂":t==="invoices"?"▤":t==="add"?"+":t==="customers"?"◉":"•••"}</Text><Text style={[styles.tabLabel,t===tab&&styles.tabActive]}>{t==="home"?"Home":t==="invoices"?"Invoices":t==="add"?"Add":t==="customers"?"Customers":"More"}</Text></Pressable>)}</View></SafeAreaView>;
 }
 

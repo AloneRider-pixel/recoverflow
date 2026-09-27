@@ -1,0 +1,33 @@
+{% extends 'base.html' %}{% block content %}
+<section class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 lg:py-14">
+  <div class="rf-kicker">RecoverFlow</div>
+  {% if page=='privacy' %}
+  <h1 class="mt-3 text-4xl md:text-5xl font-black tracking-[-.04em]">Privacy Policy</h1>
+  <p class="mt-4 text-sm text-slate-500">RecoverFlow processes the data needed to operate your receivables workspace.</p>
+  <div class="rf-card mt-8 p-6 sm:p-8 space-y-7 text-sm leading-7 text-slate-400">
+    <section><h2 class="text-lg font-bold text-white">Information we process</h2><p class="mt-2">Account details, workspace activity, invoice records, customer contact details, audit events and integration configuration required to provide the service.</p></section>
+    <section><h2 class="text-lg font-bold text-white">Payment information</h2><p class="mt-2">Payment checkout and subscription billing are handled through configured payment providers. RecoverFlow is designed not to store customer card or bank credentials in its own database.</p></section>
+    <section><h2 class="text-lg font-bold text-white">Use of data</h2><p class="mt-2">Data is used to provide the product, secure accounts, operate integrations, support customers and maintain service records.</p></section>
+    <section><h2 class="text-lg font-bold text-white">Security</h2><p class="mt-2">Workspace separation, role-based access and encrypted credential storage are used in the current application architecture.</p></section>
+    <section><h2 class="text-lg font-bold text-white">Your controls</h2><p class="mt-2">Account or data requests can be handled through the service operator's support channel.</p></section>
+  </div>
+  {% elif page=='terms' %}
+  <h1 class="mt-3 text-4xl md:text-5xl font-black tracking-[-.04em]">Terms of Service</h1>
+  <p class="mt-4 text-sm text-slate-500">These terms describe use of the RecoverFlow software service.</p>
+  <div class="rf-card mt-8 p-6 sm:p-8 space-y-7 text-sm leading-7 text-slate-400">
+    <section><h2 class="text-lg font-bold text-white">Service</h2><p class="mt-2">RecoverFlow provides receivables management, customer follow-up, payment-link and related workflow tooling. Features may change as the service evolves.</p></section>
+    <section><h2 class="text-lg font-bold text-white">Customer responsibility</h2><p class="mt-2">Customers are responsible for the accuracy of invoice information, recipient details, tax treatment, payment instructions and messages sent through their workspace.</p></section>
+    <section><h2 class="text-lg font-bold text-white">Third-party providers</h2><p class="mt-2">Payment, messaging and other third-party integrations are subject to the provider's terms, availability and configuration requirements.</p></section>
+    <section><h2 class="text-lg font-bold text-white">Paid subscriptions</h2><p class="mt-2">Paid access continues according to the selected plan and payment-provider subscription state. Access may be restricted after a trial ends or when a paid subscription is not active.</p></section>
+  </div>
+  {% else %}
+  <h1 class="mt-3 text-4xl md:text-5xl font-black tracking-[-.04em]">Refund & Cancellation Policy</h1>
+  <p class="mt-4 text-sm text-slate-500">A baseline policy for RecoverFlow subscriptions.</p>
+  <div class="rf-card mt-8 p-6 sm:p-8 space-y-7 text-sm leading-7 text-slate-400">
+    <section><h2 class="text-lg font-bold text-white">Free trial</h2><p class="mt-2">RecoverFlow currently offers a 14-day evaluation period. No subscription payment is required to begin the trial.</p></section>
+    <section><h2 class="text-lg font-bold text-white">Cancellation</h2><p class="mt-2">Customers can stop future renewal through the configured billing flow. Renewal and access behavior depends on the payment-provider subscription state.</p></section>
+    <section><h2 class="text-lg font-bold text-white">Refunds</h2><p class="mt-2">Refund requests are reviewed based on the billing event, plan and applicable law. Approved refunds are returned through the original payment route where supported.</p></section>
+    <section><h2 class="text-lg font-bold text-white">Launch checklist</h2><p class="mt-2">Before public paid launch, the operator should add the legal entity name, support contact, registered address, jurisdiction and any required statutory disclosures to these policies.</p></section>
+  </div>
+  {% endif %}
+</section>{% endblock %}
