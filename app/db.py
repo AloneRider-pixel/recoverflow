@@ -37,7 +37,7 @@ def init_db():
     # Backfill a workspace and membership for pre-enterprise accounts.
     from .models import User, Workspace, TeamMember, Invoice
     with SessionLocal.begin() as db:
-        users=list(db.scalars(select(User)).all()) if False else list(db.query(User).all())
+        users=list(db.query(User).all())
         for user in users:
             if not user.workspace_id:
                 workspace=Workspace(name=user.company_name or "My Business")
