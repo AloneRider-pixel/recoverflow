@@ -1,7 +1,66 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ title or 'RecoverFlow' }}</title><script src="https://cdn.tailwindcss.com"></script></head>
-<body class="bg-slate-950 text-slate-100 min-h-screen">
-<nav class="border-b border-slate-800"><div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-<a href="/" class="font-bold text-xl">RecoverFlow</a>
-{% if user %}<div class="flex items-center gap-4 text-sm"><a href="/billing" class="text-slate-300">Billing</a><a href="/settings" class="text-slate-300">Settings</a><span class="text-slate-500">{{user.company_name}}</span><form method="post" action="/logout"><button class="text-slate-400 hover:text-white">Log out</button></form><a href="/invoices/new" class="px-4 py-2 rounded-lg bg-white text-slate-950 font-semibold">+ Invoice</a></div>{% endif %}
-</div></nav><main class="max-w-6xl mx-auto px-6 py-8">{% block content %}{% endblock %}</main></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <meta name="description" content="RecoverFlow — automate receivables, follow-ups and payments for growing businesses.">
+  <title>{{ title or 'RecoverFlow' }}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { rf: { 950:'#07111f', 900:'#0b1728', 800:'#102036', 700:'#18304b', 600:'#245079', 500:'#2f7dbb', 400:'#53a5dd', 300:'#8dcef1' } },
+          boxShadow: { soft:'0 18px 50px rgba(0,0,0,.22)', glow:'0 0 0 1px rgba(83,165,221,.12), 0 18px 60px rgba(47,125,187,.16)' }
+        }
+      }
+    }
+  </script>
+  <style>
+    html{scroll-behavior:smooth}
+    body{background:radial-gradient(900px 500px at 85% -10%,rgba(47,125,187,.18),transparent 65%),#07111f}
+    .glass{background:rgba(11,23,40,.72);backdrop-filter:blur(18px);border:1px solid rgba(141,206,241,.10)}
+    .grid-bg{background-image:linear-gradient(rgba(141,206,241,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(141,206,241,.05) 1px,transparent 1px);background-size:38px 38px}
+    .text-balance{text-wrap:balance}
+    input,textarea,select{outline:none}
+    input:focus,textarea:focus,select:focus{box-shadow:0 0 0 3px rgba(83,165,221,.13);border-color:rgba(83,165,221,.55)!important}
+  </style>
+</head>
+<body class="min-h-screen text-slate-100 antialiased">
+  <nav class="sticky top-0 z-40 border-b border-white/5 bg-rf-950/85 backdrop-blur-xl">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <a href="{% if user %}/{% else %}/welcome{% endif %}" class="flex items-center gap-3 group">
+        <span class="h-9 w-9 rounded-xl bg-gradient-to-br from-rf-300 via-rf-500 to-rf-700 grid place-items-center shadow-glow">
+          <svg viewBox="0 0 24 24" class="h-5 w-5 text-white" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16M12 4v16"/><circle cx="12" cy="12" r="8"/></svg>
+        </span>
+        <span class="font-extrabold tracking-tight text-lg">RecoverFlow</span>
+      </a>
+      {% if user %}
+      <div class="hidden md:flex items-center gap-1 text-sm">
+        <a href="/" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Overview</a>
+        <a href="/billing" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Billing</a>
+        <a href="/settings" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Settings</a>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="hidden sm:block text-right mr-2">
+          <div class="text-xs text-slate-500">Workspace</div>
+          <div class="text-sm font-medium truncate max-w-32">{{user.company_name}}</div>
+        </div>
+        <a href="/invoices/new" class="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white text-rf-950 font-bold text-sm shadow-soft hover:translate-y-[-1px] transition">
+          <span class="text-lg leading-none">+</span> Invoice
+        </a>
+        <form method="post" action="/logout" class="hidden sm:block"><button class="px-3 py-2 text-sm text-slate-400 hover:text-white">Log out</button></form>
+      </div>
+      {% else %}
+      <div class="flex items-center gap-2">
+        <a href="/login" class="px-3.5 py-2.5 text-sm text-slate-300 hover:text-white">Sign in</a>
+        <a href="/register" class="px-4 py-2.5 rounded-xl bg-white text-rf-950 font-bold text-sm shadow-soft">Start free</a>
+      </div>
+      {% endif %}
+    </div>
+  </nav>
+  <main>{% block content %}{% endblock %}</main>
+  <footer class="max-w-7xl mx-auto px-4 sm:px-6 py-10 text-xs text-slate-600">RecoverFlow · Receivables operations for modern teams</footer>
+</body>
+</html>
