@@ -47,3 +47,17 @@ def read_session(request):
         return _serializer().loads(token, max_age=SESSION_MAX_AGE)
     except (BadSignature, BadTimeSignature):
         return None
+
+# Mobile/API bearer tokens use a separate salt and a 30-day max age.
+API_TOKEN_MAX_AGE = 60 * 60 * 24 * 30
+
+def make_api_token(user_id: int) -> str:
+    return URLSafeTimedSerializer(settings.session_secret, salt="recoverflow-api").dumps({"user_id": user_id})
+
+def read_api_token(token: str | None):
+    if not token:
+        return None
+    try:
+        return URLSafeTimedSerializer(settings.session_secret, salt="recoverflow-api").loads(token, max_age=API_TOKEN_MAX_AGE)
+    except (BadSignature, BadTimeSignature):
+        return None
