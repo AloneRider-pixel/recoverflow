@@ -1,13 +1,103 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#050a12"><title>Pay {{invoice.invoice_number}} · RecoverFlow</title><script src="https://cdn.tailwindcss.com"></script><style>body{background:radial-gradient(800px 500px at 50% -8%,rgba(69,168,212,.16),transparent 62%),#050a12}.panel{background:linear-gradient(180deg,rgba(14,27,41,.88),rgba(7,14,23,.82));border:1px solid rgba(148,196,221,.12);box-shadow:0 30px 100px rgba(0,0,0,.38)}</style></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#050a12"><title>Pay {{invoice.invoice_number}} · RecoverFlow</title><script src="https://checkout.razorpay.com/v1/checkout.js"></script><script src="https://cdn.tailwindcss.com"></script><style>body{background:radial-gradient(800px 500px at 50% -8%,rgba(69,168,212,.16),transparent 62%),#050a12}.panel{background:linear-gradient(180deg,rgba(14,27,41,.88),rgba(7,14,23,.82));border:1px solid rgba(148,196,221,.12);box-shadow:0 30px 100px rgba(0,0,0,.38)}.status{min-height:20px}</style></head>
 <body class="min-h-screen text-slate-100 antialiased">
 <main class="min-h-screen grid place-items-center px-4 py-10"><div class="w-full max-w-xl">
   <div class="flex items-center justify-center gap-3 mb-8"><div class="h-10 w-10 rounded-[13px] bg-gradient-to-br from-cyan-100 to-sky-600 text-[#07111b] grid place-items-center font-black">↗</div><div class="font-black text-xl">RecoverFlow</div></div>
   <div class="panel rounded-[30px] p-6 sm:p-8">
-    <div class="flex items-center justify-between gap-4"><div><div class="text-[10px] uppercase tracking-[.22em] font-black text-cyan-100">Secure payment request</div><div class="text-xs text-slate-600 mt-2">Issued by {{company_name}}</div></div><span class="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-100"><span class="h-1.5 w-1.5 rounded-full bg-emerald-300"></span>Secure checkout</span></div>
+    <div class="flex items-center justify-between gap-4"><div><div class="text-[10px] uppercase tracking-[.22em] font-black text-cyan-100">Secure payment request</div><div class="text-xs text-slate-600 mt-2">Issued by {{company_name}}</div></div><span class="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-100"><span class="h-1.5 w-1.5 rounded-full bg-emerald-300"></span>Razorpay Checkout</span></div>
     <h1 class="mt-7 text-3xl md:text-4xl font-black tracking-tight">{{invoice.customer_name}}</h1><p class="text-sm text-slate-600 mt-2">Invoice {{invoice.invoice_number}}{% if invoice.due_date %} · due {{invoice.due_date.strftime('%d %b %Y')}}{% endif %}</p>
     <div class="mt-7 rounded-[24px] border border-white/7 bg-black/10 p-5"><div class="text-[10px] uppercase tracking-[.18em] text-slate-700">Amount due</div><div class="mt-2 text-4xl md:text-5xl font-black tracking-[-.04em]">{{money(invoice.balance)}}</div></div>
-    {% if payment_link %}<a href="{{payment_link.short_url}}" class="mt-5 flex items-center justify-center rounded-2xl bg-white text-[#07111b] px-5 py-4 font-extrabold shadow-[0_14px_34px_rgba(255,255,255,.08)]">Continue to secure payment ↗</a><div class="mt-4 text-center text-[10px] leading-5 text-slate-700">Payment is processed by Razorpay. Available methods depend on the merchant's enabled checkout configuration.</div>{% else %}<div class="mt-5 rounded-2xl border border-amber-200/10 bg-amber-200/[.03] p-4 text-sm text-amber-100">The payment link for this invoice is not active yet. Please contact {{company_name}}.</div>{% endif %}
-    <div class="mt-7 pt-5 border-t border-white/6 text-center text-[10px] text-slate-700">Verify the invoice number and amount before paying.</div>
+    <button id="rzp-pay-button" type="button" class="mt-5 w-full flex items-center justify-center rounded-2xl bg-white text-[#07111b] px-5 py-4 font-extrabold shadow-[0_14px_34px_rgba(255,255,255,.08)] disabled:opacity-50 disabled:cursor-not-allowed">Pay securely with Razorpay</button>
+    {% if payment_link %}<a href="{{payment_link.short_url}}" class="mt-3 flex items-center justify-center rounded-2xl border border-white/10 bg-white/[.025] px-5 py-3.5 font-bold text-slate-200">Open hosted payment page ↗</a>{% endif %}
+    <div id="rzp-status" class="status mt-4 text-center text-xs text-slate-500"></div>
+    <div class="mt-7 pt-5 border-t border-white/6 text-center text-[10px] leading-5 text-slate-700">Payment is processed by Razorpay. Verify the invoice number and amount before paying.</div>
   </div>
-</div></main></body></html>
+</div></main>
+<script>
+  const invoiceToken={{token|tojson}};
+  const companyName={{company_name|tojson}};
+  const customerName={{invoice.customer_name|tojson}};
+  const customerEmail={{(invoice.email or '')|tojson}};
+  const customerPhone={{(invoice.phone or '')|tojson}};
+  const invoiceNumber={{invoice.invoice_number|tojson}};
+  const button=document.getElementById('rzp-pay-button');
+  const status=document.getElementById('rzp-status');
+
+  function setStatus(message,kind='info'){
+    status.textContent=message;
+    status.className='status mt-4 text-center text-xs '+(kind==='error'?'text-rose-200':kind==='success'?'text-emerald-200':'text-slate-500');
+  }
+
+  async function createOrder(){
+    const response=await fetch('/api/create-order',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token:invoiceToken})
+    });
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(data.detail||'Unable to create payment order.');
+    return data;
+  }
+
+  button.addEventListener('click',async()=>{
+    button.disabled=true;
+    setStatus('Creating secure payment order…');
+
+    try{
+      if(typeof Razorpay==='undefined') throw new Error('Razorpay Checkout could not be loaded. Please refresh and try again.');
+      const order=await createOrder();
+
+      const options={
+        key:order.key_id,
+        amount:order.amount,
+        currency:order.currency,
+        name:companyName,
+        description:'Invoice '+invoiceNumber,
+        order_id:order.order_id,
+        prefill:{name:customerName,email:customerEmail,contact:customerPhone},
+        theme:{color:'#8bd4f1'},
+        modal:{
+          ondismiss:function(){
+            button.disabled=false;
+            setStatus('Payment cancelled. You can try again.');
+          }
+        },
+        handler:async function(response){
+          setStatus('Payment received. Verifying securely…');
+          try{
+            const verifyResponse=await fetch('/api/verify-payment',{
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({
+                token:invoiceToken,
+                razorpay_payment_id:response.razorpay_payment_id,
+                razorpay_order_id:response.razorpay_order_id,
+                razorpay_signature:response.razorpay_signature
+              })
+            });
+            const data=await verifyResponse.json().catch(()=>({}));
+            if(!verifyResponse.ok) throw new Error(data.detail||'Payment verification failed.');
+            setStatus('Payment successful. Invoice '+invoiceNumber+' is marked paid.','success');
+            button.textContent='Payment successful';
+            button.disabled=true;
+          }catch(error){
+            button.disabled=false;
+            setStatus(error.message||'Payment verification failed.','error');
+          }
+        }
+      };
+
+      const checkout=new Razorpay(options);
+      checkout.on('payment.failed',function(response){
+        button.disabled=false;
+        setStatus(response?.error?.description||'Payment failed. Please try again.','error');
+      });
+      checkout.open();
+      setStatus('Razorpay Checkout opened.');
+    }catch(error){
+      button.disabled=false;
+      setStatus(error.message||'Unable to start checkout.','error');
+    }
+  });
+</script>
+</body></html>
