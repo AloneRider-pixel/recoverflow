@@ -1,0 +1,2 @@
+export const colors={bg:"#07111F",surface:"#0B1728",surface2:"#102036",line:"#18304B",text:"#F5F9FC",muted:"#8EA2B5",blue:"#53A5DD",cyan:"#8DCEF1",success:"#34D399",danger:"#FB7185",warning:"#FBBF24",white:"#FFFFFF"};
+export const radius={sm:10,md:14,lg:20,xl:28};
