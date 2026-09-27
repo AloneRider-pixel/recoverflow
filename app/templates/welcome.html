@@ -46,6 +46,19 @@
     <div class="rounded-2xl border border-white/5 bg-white/[.025] p-6"><div class="text-2xl">◌</div><h3 class="font-bold text-lg mt-5">Smart follow-ups</h3><p class="text-slate-400 text-sm mt-2 leading-6">Use clear reminder stages and WhatsApp delivery so overdue receivables never disappear from the queue.</p></div>
   </div>
 </section>
+<section class="max-w-7xl mx-auto px-5 py-16">
+  <div class="rounded-3xl border border-cyan-200/10 bg-gradient-to-br from-cyan-200/[.06] to-transparent p-7 md:p-10">
+    <div class="grid lg:grid-cols-[.8fr_1.2fr] gap-10 items-start">
+      <div><div class="text-cyan-200 text-xs font-bold tracking-[.18em]">BUILT FOR INDIA</div><h2 class="text-3xl md:text-4xl font-black tracking-tight mt-3">Meet customers where they already pay.</h2><p class="text-slate-400 mt-4 leading-7">Use INR-first collections with UPI, cards, netbanking and supported wallets for one-time invoice payments. For recurring RecoverFlow subscriptions, the payment provider can support eligible UPI Autopay, cards and e-mandates.</p></div>
+      <div class="grid sm:grid-cols-2 gap-3">
+        <div class="rounded-2xl border border-white/5 bg-[#081522] p-5"><div class="font-bold">UPI-first checkout</div><p class="text-xs text-slate-500 mt-2 leading-5">Fast mobile payment journeys built around the payment methods Indian businesses use daily.</p></div>
+        <div class="rounded-2xl border border-white/5 bg-[#081522] p-5"><div class="font-bold">B2B flexibility</div><p class="text-xs text-slate-500 mt-2 leading-5">Support advances and partial collection workflows where the enabled payment method allows it.</p></div>
+        <div class="rounded-2xl border border-white/5 bg-[#081522] p-5"><div class="font-bold">WhatsApp collection</div><p class="text-xs text-slate-500 mt-2 leading-5">Send customer follow-ups from the same invoice workflow instead of switching tools.</p></div>
+        <div class="rounded-2xl border border-white/5 bg-[#081522] p-5"><div class="font-bold">GST-aware records</div><p class="text-xs text-slate-500 mt-2 leading-5">Keep GSTIN, place of supply, tax and TDS fields alongside the receivable.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
 <section id="workflow" class="border-y border-white/5 bg-white/[.018]">
   <div class="max-w-7xl mx-auto px-5 py-20 md:py-24"><div class="text-cyan-200 text-xs font-bold tracking-[.18em]">THE WORKFLOW</div><h2 class="text-4xl md:text-5xl font-black tracking-tight mt-3">From invoice to cash, with fewer manual steps.</h2>
   <div class="grid md:grid-cols-5 gap-4 mt-12">{% for n,title,desc in [('01','Import','Bring in your open invoices.'),('02','Prioritize','See due and overdue work.'),('03','Remind','Send a clear follow-up.'),('04','Collect','Share a payment link.'),('05','Close','Mark paid and move on.') ] %}<div class="rounded-2xl border border-white/5 bg-[#081522] p-5"><div class="text-xs text-cyan-200 font-bold">{{n}}</div><div class="font-bold mt-5">{{title}}</div><p class="text-xs text-slate-500 mt-2 leading-5">{{desc}}</p></div>{% endfor %}</div></div>
