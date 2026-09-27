@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session
 from openai import OpenAI
 from .config import settings
 from .db import get_db, init_db, engine
-from .models import User, Invoice, PaymentLink, PaymentTransaction, WebhookEvent, ReminderLog, BillingPlan, DeviceToken, Workspace, TeamMember, TeamInvite, AuditLog, RecurringInvoice, Lead, CollectionEvent
+from .models import User, Invoice, PaymentLink, PaymentTransaction, WebhookEvent, ReminderLog, BillingPlan, DeviceToken, Workspace, TeamMember, TeamInvite, AuditLog, RecurringInvoice, Lead, CollectionEvent, Customer, CollectionCase, CollectionTask
 from .security import set_session, clear_session, read_session, new_csrf, encrypt, decrypt, make_api_token, read_api_token, make_public_invoice_token, read_public_invoice_token, make_statement_token, read_statement_token, make_api_token, read_api_token
 from .password import hash_password, verify_password
-from .integrations import create_payment_link, send_whatsapp_template, verify_webhook, merchant_keys, webhook_secret, platform_request, platform_keys, send_expo_push, standard_checkout_keys, standard_checkout_client, create_standard_checkout_order
+from .integrations import create_payment_link, send_whatsapp_template, verify_webhook, merchant_keys, webhook_secret, platform_request, platform_keys, send_expo_push, standard_checkout_keys, standard_checkout_client, create_standard_checkout_order\nfrom .collection_engine import recommend_next_action\nfrom .import_pipeline import read_tabular_upload\nimport sentry_sdk
 
 # Initialize all application tables after model imports.
 init_db()
@@ -150,6 +150,140 @@ def ai_message(i,tone):
         return r.choices[0].message.content.strip()
     except Exception:
         return None
+
+def normalize_customer_name(value):
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def ensure_customer_record(db, workspace, invoice):
+    normalized = normalize_customer_name(invoice.customer_name)
+    customer = db.scalar(
+        select(Customer).where(
+            Customer.workspace_id == workspace.id,
+            Customer.normalized_name == normalized,
+        )
+    )
+    if customer:
+        changed = False
+        if invoice.phone and not customer.phone:
+            customer.phone = invoice.phone; changed = True
+        if invoice.email and not customer.email:
+            customer.email = invoice.email; changed = True
+        if invoice.gstin and not customer.gstin:
+            customer.gstin = invoice.gstin; changed = True
+        if changed:
+            db.flush()
+        return customer
+    customer = Customer(
+        workspace_id=workspace.id,
+        name=invoice.customer_name,
+        normalized_name=normalized,
+        phone=invoice.phone,
+        email=invoice.email,
+        gstin=invoice.gstin,
+        status="active",
+    )
+    db.add(customer); db.flush()
+    return customer
+
+
+def sync_collection_cases(user, workspace, db, invoices=None, events=None):
+    invoices = invoices if invoices is not None else list(
+        db.scalars(select(Invoice).where(Invoice.workspace_id == workspace.id)).all()
+    )
+    events = events if events is not None else list(
+        db.scalars(
+            select(CollectionEvent)
+            .where(CollectionEvent.workspace_id == workspace.id)
+            .order_by(CollectionEvent.created_at.desc())
+        ).all()
+    )
+
+    latest_state = {}
+    latest_contact = {}
+    latest_any = {}
+    for event in events:
+        latest_any.setdefault(event.invoice_id, event)
+        if event.event_type in {"promise", "dispute", "payment_claimed"}:
+            latest_state.setdefault(event.invoice_id, event)
+        if event.event_type == "contact" and event.invoice_id not in latest_contact:
+            latest_contact[event.invoice_id] = event
+
+    open_invoices = [i for i in invoices if i.balance > 0]
+    max_balance = max((i.balance for i in open_invoices), default=Decimal("1"))
+    cases = []
+
+    for invoice in invoices:
+        customer = ensure_customer_record(db, workspace, invoice)
+        state = latest_state.get(invoice.id)
+        last_contact = latest_contact.get(invoice.id)
+        promise_broken = bool(
+            state
+            and state.event_type == "promise"
+            and state.promised_date
+            and state.promised_date < date.today()
+        )
+        rec = recommend_next_action(
+            overdue=invoice.days_overdue,
+            balance=invoice.balance,
+            max_balance=max_balance,
+            promise_broken=promise_broken,
+            dispute=bool(state and state.event_type == "dispute"),
+            payment_claimed=bool(state and state.event_type == "payment_claimed"),
+            promised_date=state.promised_date if state and state.event_type == "promise" else None,
+            last_contact_at=last_contact.created_at if last_contact else None,
+            due_date=invoice.due_date,
+        )
+
+        case = db.scalar(
+            select(CollectionCase).where(
+                CollectionCase.workspace_id == workspace.id,
+                CollectionCase.invoice_id == invoice.id,
+            )
+        )
+        if not case:
+            case = CollectionCase(
+                workspace_id=workspace.id,
+                invoice_id=invoice.id,
+                customer_id=customer.id,
+                assigned_to_user_id=user.id,
+            )
+            db.add(case); db.flush()
+
+        case.customer_id = customer.id
+        case.status = "open" if invoice.balance > 0 else "closed"
+        case.priority = rec["priority"]
+        case.recovery_score = rec["score"]
+        case.next_action_type = rec["action_type"]
+        case.next_action_at = rec["next_action_at"] if invoice.balance > 0 else None
+        case.assigned_to_user_id = case.assigned_to_user_id or user.id
+        case.promise_date = state.promised_date if state and state.event_type == "promise" else None
+        case.promise_amount = state.promised_amount if state and state.event_type == "promise" else None
+        case.last_action_at = latest_any[invoice.id].created_at if invoice.id in latest_any else None
+        cases.append((case, invoice, rec, promise_broken))
+
+        if invoice.balance > 0 and rec["action_type"] != "MONITOR":
+            due_at = rec["next_action_at"]
+            dedupe_key = f"{case.id}:{rec['action_type']}:{due_at.isoformat()}"
+            task = db.scalar(select(CollectionTask).where(CollectionTask.dedupe_key == dedupe_key))
+            if not task:
+                db.add(
+                    CollectionTask(
+                        workspace_id=workspace.id,
+                        case_id=case.id,
+                        invoice_id=invoice.id,
+                        assigned_to_user_id=case.assigned_to_user_id,
+                        action_type=rec["action_type"],
+                        title=rec["recommended_action"],
+                        due_at=due_at,
+                        status="open",
+                        dedupe_key=dedupe_key,
+                    )
+                )
+
+    db.commit()
+    return cases
+
 
 def collection_queue(invoices, events=None):
     events=events or []
@@ -1040,6 +1174,152 @@ def dashboard(request:Request,db:Session=Depends(get_db)):
     aging={bucket:sum((i.balance for i in invoices if i.aging_bucket==bucket),Decimal("0")) for bucket in ["Current","1–7 days","8–30 days","30+ days"]}
     return templates.TemplateResponse("dashboard.html",{"request":request,"user":user,"csrf":csrf_for(request),"invoices":invoices,"outstanding":outstanding,"overdue":overdue,"due_today":due_today,"customers":customers,"money":money,"collection_rate":collection_rate,"aging":aging,"paid":paid,"invoiced":invoiced,"demo_added":request.query_params.get("demo_added"),"message":request.query_params.get("message"),**commercial_context(user)})
 
+@app.get("/today",response_class=HTMLResponse)
+def today_page(request:Request,db:Session=Depends(get_db)):
+    user,workspace=require_role(request,db,"owner","admin","finance","collector","viewer")
+    invoices=list(db.scalars(select(Invoice).where(Invoice.workspace_id==workspace.id)).all())
+    events=list(
+        db.scalars(
+            select(CollectionEvent)
+            .where(CollectionEvent.workspace_id==workspace.id)
+            .order_by(CollectionEvent.created_at.desc())
+        ).all()
+    )
+    cases=sync_collection_cases(user,workspace,db,invoices=invoices,events=events)
+
+    now=datetime.utcnow()
+    tomorrow=datetime.combine(date.today()+timedelta(days=1), datetime.min.time())
+    tasks=list(
+        db.scalars(
+            select(CollectionTask)
+            .where(
+                CollectionTask.workspace_id==workspace.id,
+                CollectionTask.status=="open",
+            )
+            .order_by(CollectionTask.due_at.asc(), CollectionTask.created_at.asc())
+            .limit(100)
+        ).all()
+    )
+    task_rows=[]
+    upcoming=[]
+    for task in tasks:
+        invoice=db.get(Invoice,task.invoice_id)
+        case=db.get(CollectionCase,task.case_id)
+        if not invoice or invoice.balance<=0:
+            continue
+        rec=next((x[2] for x in cases if x[1].id==invoice.id),None)
+        row={
+            "task":task,
+            "invoice":invoice,
+            "case":case,
+            "priority":case.priority if case else "Low",
+            "action_type":task.action_type,
+            "recommended_action":rec["recommended_action"] if rec else task.title,
+            "reason":rec["reason"] if rec else "Scheduled collection action.",
+        }
+        if task.due_at <= tomorrow:
+            task_rows.append(row)
+        else:
+            upcoming.append(row)
+
+    outstanding=sum((i.balance for i in invoices),Decimal("0"))
+    overdue=sum((i.balance for i in invoices if i.days_overdue>0),Decimal("0"))
+    due_7=sum((i.balance for i in invoices if i.balance>0 and 0 <= (i.due_date-date.today()).days <= 7),Decimal("0"))
+    broken=sum(1 for _,_,_,broken_flag in cases if broken_flag)
+    return templates.TemplateResponse(
+        "today.html",
+        {
+            "request":request,
+            "user":user,
+            "csrf":csrf_for(request),
+            "tasks":task_rows[:50],
+            "upcoming":upcoming[:10],
+            "outstanding":outstanding,
+            "overdue":overdue,
+            "due_7":due_7,
+            "actions_today":len(task_rows),
+            "broken":broken,
+            "money":money,
+            "message":request.query_params.get("message",""),
+            **commercial_context(user),
+        },
+    )
+
+
+@app.get("/api/v1/today")
+def api_today(request:Request,db:Session=Depends(get_db)):
+    user,workspace=api_user(request,db),None
+    ensure_access(user)
+    workspace=workspace_for(user,db)
+    invoices=list(db.scalars(select(Invoice).where(Invoice.workspace_id==workspace.id)).all())
+    cases=sync_collection_cases(user,workspace,db,invoices=invoices)
+    tasks=list(
+        db.scalars(
+            select(CollectionTask)
+            .where(CollectionTask.workspace_id==workspace.id,CollectionTask.status=="open")
+            .order_by(CollectionTask.due_at.asc())
+            .limit(100)
+        ).all()
+    )
+    case_by_id={case.id:case for case,_,_,_ in cases}
+    invoice_by_id={invoice.id:invoice for _,invoice,_,_ in cases}
+    return [
+        {
+            "task_id":task.id,
+            "invoice_id":task.invoice_id,
+            "invoice_number":invoice_by_id.get(task.invoice_id).invoice_number if invoice_by_id.get(task.invoice_id) else None,
+            "customer_name":invoice_by_id.get(task.invoice_id).customer_name if invoice_by_id.get(task.invoice_id) else None,
+            "balance":str(invoice_by_id.get(task.invoice_id).balance) if invoice_by_id.get(task.invoice_id) else None,
+            "priority":case_by_id.get(task.case_id).priority if case_by_id.get(task.case_id) else "Low",
+            "action_type":task.action_type,
+            "title":task.title,
+            "due_at":task.due_at.isoformat(),
+            "assigned_to_user_id":task.assigned_to_user_id,
+        }
+        for task in tasks
+        if invoice_by_id.get(task.invoice_id) and invoice_by_id.get(task.invoice_id).balance > 0
+    ]
+
+
+@app.post("/today/tasks/{task_id}/complete")
+def complete_today_task(task_id:int,request:Request,csrf:str=Form(...),outcome:str=Form(""),db:Session=Depends(get_db)):
+    user,workspace=require_role(request,db,"owner","admin","finance","collector")
+    check_csrf(request,csrf)
+    task=db.scalar(
+        select(CollectionTask).where(
+            CollectionTask.id==task_id,
+            CollectionTask.workspace_id==workspace.id,
+            CollectionTask.status=="open",
+        )
+    )
+    if not task:
+        raise HTTPException(404,"Collection task not found")
+    invoice=db.scalar(select(Invoice).where(Invoice.id==task.invoice_id,Invoice.workspace_id==workspace.id))
+    if not invoice or invoice.balance<=0:
+        task.status="cancelled"
+        db.commit()
+        return RedirectResponse("/today?message=Task+closed+because+the+invoice+is+already+paid",303)
+
+    task.status="completed"
+    task.completed_at=datetime.utcnow()
+    task.outcome=outcome.strip()[:2000] or "Action completed."
+    event_type="contact" if task.action_type in {"CALL","WHATSAPP","EMAIL"} else "note"
+    db.add(
+        CollectionEvent(
+            workspace_id=workspace.id,
+            invoice_id=invoice.id,
+            user_id=user.id,
+            event_type=event_type,
+            channel=task.action_type.lower(),
+            body=task.outcome,
+        )
+    )
+    audit(db,user,"collection.task_completed","collection_task",task.id,{"invoice_id":invoice.id,"action_type":task.action_type})
+    db.commit()
+    sync_collection_cases(user,workspace,db)
+    return RedirectResponse("/today?message=Collection+action+completed+and+outcome+logged",303)
+
+
 @app.post("/demo/seed")
 def seed_demo(request:Request,csrf:str=Form(...),db:Session=Depends(get_db)):
     user,workspace=require_role(request,db,"owner","admin","finance"); check_csrf(request,csrf)
@@ -1077,19 +1357,56 @@ def create_invoice(request:Request,csrf:str=Form(...),invoice_number:str=Form(..
 
 @app.post("/invoices/import")
 async def import_csv(request:Request,csrf:str=Form(...),file:UploadFile=File(...),db:Session=Depends(get_db)):
-    user,workspace=require_role(request,db,"owner","admin","finance","collector"); check_csrf(request,csrf)
-    if not file.filename.lower().endswith(".csv"): raise HTTPException(400,"Upload a CSV file")
-    reader=csv.DictReader(io.StringIO((await file.read()).decode("utf-8-sig")))
-    req={"invoice_number","customer_name","amount","issue_date","due_date"}
-    if not req.issubset(set(reader.fieldnames or [])): raise HTTPException(400,"CSV missing required columns")
-    rows=list(reader)
+    user,workspace=require_role(request,db,"owner","admin","finance","collector")
+    check_csrf(request,csrf)
+    payload=await file.read()
+    try:
+        rows, row_errors = read_tabular_upload(str(file.filename or ""), payload)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    if row_errors:
+        raise HTTPException(400,"Import blocked: " + " | ".join(row_errors[:8]))
+    if not rows:
+        raise HTTPException(400,"No valid receivables were found in the file.")
+
     ensure_limit(user,workspace,"invoices",db,len(rows))
+    imported=0
+    skipped=0
     for row in rows:
-        num=row["invoice_number"].strip()
-        if db.scalar(select(Invoice).where(Invoice.invoice_number==num)): continue
-        paid=Decimal((row.get("paid_amount") or "0").strip()); amount=Decimal(row["amount"].strip())
-        db.add(Invoice(owner_id=user.id,workspace_id=workspace.id,invoice_number=num,customer_name=row["customer_name"].strip(),phone=(row.get("phone") or "").strip() or None,email=(row.get("email") or "").strip() or None,amount=amount,paid_amount=paid,issue_date=date.fromisoformat(row["issue_date"].strip()),due_date=date.fromisoformat(row["due_date"].strip()),status="paid" if paid>=amount else "partially_paid" if paid>0 else "unpaid"))
-    db.commit();return RedirectResponse("/",303)
+        num=row["invoice_number"]
+        if db.scalar(select(Invoice).where(Invoice.invoice_number==num)):
+            skipped += 1
+            continue
+        amount=row["amount"]; paid=row["paid_amount"]
+        db.add(
+            Invoice(
+                owner_id=user.id,
+                workspace_id=workspace.id,
+                invoice_number=num,
+                customer_name=row["customer_name"],
+                phone=row["phone"],
+                email=row["email"],
+                amount=amount,
+                paid_amount=paid,
+                issue_date=row["issue_date"],
+                due_date=row["due_date"],
+                status="paid" if paid>=amount else "partially_paid" if paid>0 else "unpaid",
+                gstin=row["gstin"],
+                place_of_supply=row["place_of_supply"],
+                tax_rate=row["tax_rate"],
+                tax_amount=row["tax_amount"],
+                tds_amount=row["tds_amount"],
+            )
+        )
+        imported += 1
+
+    db.flush()
+    invoices=list(db.scalars(select(Invoice).where(Invoice.workspace_id==workspace.id)).all())
+    sync_collection_cases(user,workspace,db,invoices=invoices)
+    message=f"Imported {imported} receivables"
+    if skipped:
+        message += f" · skipped {skipped} existing invoice(s)"
+    return RedirectResponse("/today?message="+urllib.parse.quote(message),303)
 
 @app.get("/invoices/{invoice_id}",response_class=HTMLResponse)
 def invoice_detail(request:Request,invoice_id:int,tone:str="friendly",db:Session=Depends(get_db)):
