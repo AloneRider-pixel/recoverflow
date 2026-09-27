@@ -7,9 +7,9 @@
       <p class="mt-3 text-sm md:text-[15px] text-slate-500 max-w-2xl">Your workspace is centered on the receivables that need attention next — not the invoices that are already quiet.</p>
     </div>
     <div class="flex flex-wrap gap-2">
-      <a href="/invoices/new" class="rf-btn-primary text-sm">+ Add invoice</a>
+      <a href="/today" class="rf-btn-primary text-sm">Open Today →</a><a href="/invoices/new" class="rf-btn-secondary text-sm">+ Add invoice</a>
       <form action="/demo/seed" method="post"><input type="hidden" name="csrf" value="{{csrf}}"><button class="rf-btn-secondary text-sm">Load demo</button></form>
-      <form action="/invoices/import" method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{csrf}}"><label class="rf-btn-secondary text-sm cursor-pointer">Import CSV<input required type="file" name="file" accept=".csv" class="hidden" onchange="this.form.submit()"></label></form>
+      <form id="import" action="/invoices/import" method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{csrf}}"><label class="rf-btn-secondary text-sm cursor-pointer">Import CSV/XLSX<input required type="file" name="file" accept=".csv,.xlsx,.xls" class="hidden" onchange="this.form.submit()"></label></form>
     </div>
   </div>
 
