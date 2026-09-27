@@ -12,7 +12,10 @@ from .db import get_db, init_db
 from .models import User, Invoice, PaymentLink, ReminderLog, BillingPlan
 from .security import set_session, clear_session, read_session, new_csrf, encrypt, decrypt
 from .password import hash_password, verify_password
-from .integrations import create_payment_link, send_whatsapp_template, verify_webhook, merchant_keys, webhook_secret, platform_request\n\n# Initialize all application tables after model imports.\ninit_db()
+from .integrations import create_payment_link, send_whatsapp_template, verify_webhook, merchant_keys, webhook_secret, platform_request
+
+# Initialize all application tables after model imports.
+init_db()
 
 app=FastAPI(title=settings.app_name)
 templates=Jinja2Templates(directory="app/templates")
