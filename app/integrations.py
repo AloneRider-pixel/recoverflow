@@ -28,7 +28,9 @@ def _razorpay_request(method, path, key_id, key_secret, payload=None):
     return r.json()
 
 def create_payment_link(user, invoice):
-    key_id, key_secret = merchant_keys(user)
+    # Prefer workspace credentials; fall back to global Render credentials
+    # for single-merchant/test deployments.
+    key_id, key_secret = standard_checkout_keys(user)
     if invoice.balance < 1:
         raise HTTPException(400, "Razorpay Payment Links require at least ₹1.")
     payload = {
