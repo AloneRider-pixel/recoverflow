@@ -117,6 +117,20 @@ class ReminderLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     __table_args__ = (UniqueConstraint("invoice_id","stage","channel",name="uq_reminder_invoice_stage_channel"),)
 
+
+class CollectionEvent(Base):
+    __tablename__ = "collection_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    event_type: Mapped[str] = mapped_column(String(40), index=True)
+    channel: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    promised_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    promised_amount: Mapped[Decimal | None] = mapped_column(Numeric(14,2), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
 class DeviceToken(Base):
     __tablename__ = "device_tokens"
     id: Mapped[int] = mapped_column(primary_key=True)
