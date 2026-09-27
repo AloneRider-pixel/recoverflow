@@ -10,7 +10,7 @@ from openai import OpenAI
 from .config import settings
 from .db import get_db, init_db
 from .models import User, Invoice, PaymentLink, ReminderLog, BillingPlan
-from .security import set_session, clear_session, read_session, new_csrf, encrypt, decrypt
+from .security import set_session, clear_session, read_session, new_csrf, encrypt, decrypt, make_api_token, read_api_token
 from .password import hash_password, verify_password
 from .integrations import create_payment_link, send_whatsapp_template, verify_webhook, merchant_keys, webhook_secret, platform_request
 
@@ -72,6 +72,96 @@ def hmac_compare(a,b):
 @app.get("/health")
 def health(): return {"status":"ok","app":settings.app_name}
 
+@app.get("/welcome",response_class=HTMLResponse)
+def welcome(request:Request):
+    return templates.TemplateResponse("welcome.html",{"request":request,"plans":PLANS})
+
+def api_user(request:Request, db:Session):
+    header=request.headers.get("authorization","")
+    if not header.lower().startswith("bearer "):
+        raise HTTPException(401,"Authentication required")
+    payload=read_api_token(header[7:].strip())
+    if not payload or not payload.get("user_id"):
+        raise HTTPException(401,"Invalid or expired token")
+    user=db.get(User,int(payload["user_id"]))
+    if not user:
+        raise HTTPException(401,"User not found")
+    return user
+
+@app.post("/api/v1/auth/login")
+async def api_login(request:Request,db:Session=Depends(get_db)):
+    try: data=await request.json()
+    except Exception: raise HTTPException(400,"Invalid JSON")
+    email=str(data.get("email","")).strip().lower()
+    password=str(data.get("password",""))
+    if not email or not password: raise HTTPException(400,"Email and password are required")
+    user=db.scalar(select(User).where(func.lower(User.email)==email))
+    if not user or not verify_password(password,user.password_hash):
+        raise HTTPException(401,"Invalid email or password")
+    return {"access_token":make_api_token(user.id),"token_type":"bearer","expires_in":60*60*24*30}
+
+@app.post("/api/v1/auth/register")
+async def api_register(request:Request,db:Session=Depends(get_db)):
+    try: data=await request.json()
+    except Exception: raise HTTPException(400,"Invalid JSON")
+    email=str(data.get("email","")).strip().lower()
+    password=str(data.get("password",""))
+    company_name=str(data.get("company_name","My Business")).strip() or "My Business"
+    if not email or not password: raise HTTPException(400,"Email and password are required")
+    if len(password)<8: raise HTTPException(400,"Password must be at least 8 characters")
+    if db.scalar(select(User).where(func.lower(User.email)==email)): raise HTTPException(409,"Email already registered")
+    user=User(email=email,password_hash=hash_password(password),company_name=company_name)
+    db.add(user); db.commit()
+    return {"access_token":make_api_token(user.id),"token_type":"bearer","expires_in":60*60*24*30}
+
+@app.get("/api/v1/me")
+def api_me(request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db)
+    return {"id":user.id,"email":user.email,"company_name":user.company_name,"subscription_status":user.subscription_status,"subscription_plan":user.subscription_plan}
+
+@app.get("/api/v1/dashboard")
+def api_dashboard(request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db)
+    invoices=list(db.scalars(select(Invoice).where(Invoice.owner_id==user.id).order_by(Invoice.due_date.asc())).all())
+    outstanding=sum((i.balance for i in invoices),Decimal("0"))
+    overdue=sum((i.balance for i in invoices if i.days_overdue>0),Decimal("0"))
+    due_today=sum((i.balance for i in invoices if i.balance>0 and i.due_date==date.today()),Decimal("0"))
+    paid=sum((i.paid_amount for i in invoices),Decimal("0"))
+    return {"outstanding":str(outstanding),"overdue":str(overdue),"due_today":str(due_today),"paid":str(paid),"invoice_count":len(invoices),"customer_count":len({i.customer_name for i in invoices})}
+
+@app.get("/api/v1/invoices")
+def api_invoices(request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db)
+    invoices=list(db.scalars(select(Invoice).where(Invoice.owner_id==user.id).order_by(Invoice.due_date.asc())).all())
+    return [{"id":i.id,"invoice_number":i.invoice_number,"customer_name":i.customer_name,"phone":i.phone,"email":i.email,"amount":str(i.amount),"paid_amount":str(i.paid_amount),"balance":str(i.balance),"issue_date":i.issue_date.isoformat(),"due_date":i.due_date.isoformat(),"status":i.status,"days_overdue":i.days_overdue,"aging_bucket":i.aging_bucket} for i in invoices]
+
+@app.post("/api/v1/invoices")
+async def api_create_invoice(request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db)
+    try: data=await request.json()
+    except Exception: raise HTTPException(400,"Invalid JSON")
+    required=["invoice_number","customer_name","amount","issue_date","due_date"]
+    missing=[k for k in required if not str(data.get(k,"")).strip()]
+    if missing: raise HTTPException(400,"Missing fields: "+", ".join(missing))
+    try:
+        amount=Decimal(str(data["amount"])); paid=Decimal(str(data.get("paid_amount","0")))
+        issue_date=date.fromisoformat(str(data["issue_date"])); due_date=date.fromisoformat(str(data["due_date"]))
+    except (InvalidOperation,ValueError): raise HTTPException(400,"Invalid invoice values")
+    num=str(data["invoice_number"]).strip()
+    if amount<=0 or paid<0 or paid>amount: raise HTTPException(400,"Invalid payment values")
+    if db.scalar(select(Invoice).where(Invoice.invoice_number==num)): raise HTTPException(409,"Invoice number already exists")
+    i=Invoice(owner_id=user.id,invoice_number=num,customer_name=str(data["customer_name"]).strip(),phone=str(data.get("phone","")).strip() or None,email=str(data.get("email","")).strip() or None,amount=amount,paid_amount=paid,issue_date=issue_date,due_date=due_date,status="paid" if paid>=amount else "partially_paid" if paid>0 else "unpaid",notes=str(data.get("notes","")).strip() or None)
+    db.add(i); db.commit()
+    return {"id":i.id,"invoice_number":i.invoice_number,"balance":str(i.balance),"status":i.status}
+
+@app.post("/api/v1/invoices/{invoice_id}/mark-paid")
+def api_mark_paid(invoice_id:int,request:Request,db:Session=Depends(get_db)):
+    user=api_user(request,db)
+    invoice=db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.owner_id==user.id))
+    if not invoice: raise HTTPException(404,"Invoice not found")
+    invoice.paid_amount=invoice.amount; invoice.status="paid"; db.commit()
+    return {"ok":True,"id":invoice.id,"status":invoice.status}
+
 @app.get("/login",response_class=HTMLResponse)
 def login_page(request:Request):
     return templates.TemplateResponse("login.html",{"request":request,"error":request.query_params.get("error","")})
@@ -104,7 +194,9 @@ def logout():
 
 @app.get("/",response_class=HTMLResponse)
 def dashboard(request:Request,db:Session=Depends(get_db)):
-    user=require_user(request,db)
+    user=session_user(request,db)
+    if not user:
+        return templates.TemplateResponse("welcome.html",{"request":request,"plans":PLANS})
     invoices=list(db.scalars(select(Invoice).where(Invoice.owner_id==user.id).order_by(Invoice.due_date.asc())).all())
     outstanding=sum((i.balance for i in invoices),Decimal("0"))
     overdue=sum((i.balance for i in invoices if i.days_overdue>0),Decimal("0"))
@@ -305,4 +397,3 @@ def internal_reminders(request:Request,db:Session=Depends(get_db)):
             except HTTPException:
                 db.rollback(); skipped+=1
     return {"ok":True,"sent":sent,"skipped":skipped}
-
