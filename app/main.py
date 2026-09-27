@@ -1291,7 +1291,7 @@ def collections_page(request:Request,db:Session=Depends(get_db)):
         "request":request,"user":user,"csrf":csrf_for(request),"rows":rows[:50],
         "outstanding":sum((i.balance for i in invoices),Decimal("0")),
         "overdue":overdue,"due_7":due_7,"promises":promises,"broken":broken,
-        "money":money,**commercial_context(user)
+        "money":money,"message":request.query_params.get("message",""),"error":request.query_params.get("error",""),**commercial_context(user)
     })
 
 @app.post("/collections/{invoice_id}/event")
