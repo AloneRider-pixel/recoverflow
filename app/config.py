@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     razorpay_platform_key_id: str = ""
     razorpay_platform_key_secret: str = ""
     razorpay_platform_webhook_secret: str = ""
+    razorpay_key_id: str = ""
+    razorpay_key_secret: str = ""
     whatsapp_graph_version: str = ""
     environment: str = "production"
     public_base_url: str = ""
