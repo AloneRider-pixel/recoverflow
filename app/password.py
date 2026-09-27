@@ -7,7 +7,7 @@ P=1
 def hash_password(password: str) -> str:
     salt=secrets.token_bytes(16)
     digest=hashlib.scrypt(password.encode(),salt=salt,n=N,r=R,p=P)
-    return "scrypt$%s$%s$%s$%s" % (N,R,P,base64.urlsafe_b64encode(salt).decode(),base64.urlsafe_b64encode(digest).decode())
+    return "scrypt$%s$%s$%s$%s$%s" % (N,R,P,base64.urlsafe_b64encode(salt).decode(),base64.urlsafe_b64encode(digest).decode())
 
 def verify_password(password: str, encoded: str) -> bool:
     try:
