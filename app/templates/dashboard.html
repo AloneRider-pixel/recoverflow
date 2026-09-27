@@ -1,32 +1,68 @@
 {% extends 'base.html' %}{% block content %}
-<div class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-  <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5 mb-8">
-    <div><div class="text-xs font-bold tracking-[.2em] text-rf-300">OVERVIEW</div><h1 class="text-3xl md:text-4xl font-black tracking-tight mt-2">Collection control center</h1><p class="text-slate-500 mt-2">Prioritize outstanding cash and keep every follow-up visible.</p></div>
+<section class="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-7 lg:py-9">
+  <div class="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-5">
+    <div>
+      <div class="rf-kicker">Collection command center</div>
+      <h1 class="mt-2 text-3xl md:text-4xl lg:text-5xl font-black tracking-[-.035em]">Good evening, {{user.company_name}}.</h1>
+      <p class="mt-3 text-sm md:text-[15px] text-slate-500 max-w-2xl">Your workspace is centered on the receivables that need attention next — not the invoices that are already quiet.</p>
+    </div>
     <div class="flex flex-wrap gap-2">
-      <a href="/invoices/new" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-rf-950 font-bold text-sm">+ Add invoice</a>
-      <form action="/demo/seed" method="post"><input type="hidden" name="csrf" value="{{csrf}}"><button class="px-4 py-2.5 rounded-xl border border-rf-700 bg-white/[.02] text-sm font-semibold hover:bg-white/[.04]">Load demo</button></form>
-      <form action="/invoices/import" method="post" enctype="multipart/form-data" class="flex gap-2"><input type="hidden" name="csrf" value="{{csrf}}"><label class="cursor-pointer px-4 py-2.5 rounded-xl border border-rf-700 bg-white/[.02] text-sm font-semibold">Import CSV<input required type="file" name="file" accept=".csv" class="hidden" onchange="this.form.submit()"></label></form>
+      <a href="/invoices/new" class="rf-btn-primary text-sm">+ Add invoice</a>
+      <form action="/demo/seed" method="post"><input type="hidden" name="csrf" value="{{csrf}}"><button class="rf-btn-secondary text-sm">Load demo</button></form>
+      <form action="/invoices/import" method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{csrf}}"><label class="rf-btn-secondary text-sm cursor-pointer">Import CSV<input required type="file" name="file" accept=".csv" class="hidden" onchange="this.form.submit()"></label></form>
     </div>
   </div>
-  {% if demo_added %}<div class="mb-5 rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4 text-sm text-emerald-200">Added {{demo_added}} demo invoices to this workspace.</div>{% endif %}
-  {% if message %}<div class="mb-5 rounded-2xl border border-rf-400/15 bg-rf-400/5 p-4 text-sm text-rf-200">{{message}}</div>{% endif %}
-  <div class="grid lg:grid-cols-[1.25fr_.75fr] gap-3 mb-7">
-    <div class="glass rounded-3xl p-5 sm:p-6">
-      <div class="flex items-end justify-between"><div><div class="text-xs font-bold tracking-[.18em] text-rf-300">COLLECTION PERFORMANCE</div><h2 class="font-bold text-lg mt-2">Cash recovery</h2></div><div class="text-2xl font-black">{{'%.1f'|format(collection_rate)}}%</div></div>
-      <div class="h-2 rounded-full bg-rf-950 mt-5 overflow-hidden"><div class="h-full rounded-full bg-gradient-to-r from-rf-400 to-cyan-200" style="width: {{[collection_rate,100]|min}}%"></div></div>
-      <div class="flex justify-between text-xs text-slate-600 mt-2"><span>Paid {{money(paid)}}</span><span>Invoiced {{money(invoiced)}}</span></div>
+
+  {% if demo_added %}<div class="mt-5 rounded-2xl border border-emerald-300/10 bg-emerald-300/[.04] px-4 py-3 text-sm text-emerald-100">Added {{demo_added}} demo invoices to this workspace.</div>{% endif %}
+  {% if message %}<div class="mt-5 rounded-2xl border border-cyan-200/10 bg-cyan-200/[.035] px-4 py-3 text-sm text-cyan-100">{{message}}</div>{% endif %}
+
+  <div class="mt-7 grid xl:grid-cols-[1.45fr_.55fr] gap-4">
+    <div class="rf-card p-5 sm:p-6 rf-grid relative overflow-hidden">
+      <div class="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-cyan-200/[.035] blur-3xl"></div>
+      <div class="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
+        <div><div class="rf-kicker">Cash recovery</div><div class="mt-2 text-4xl md:text-5xl font-black tracking-[-.04em]">{{'%.1f'|format(collection_rate)}}%</div><div class="mt-2 text-sm text-slate-500">Collected against invoiced value</div></div>
+        <div class="h-32 w-32 sm:h-36 sm:w-36 rounded-full p-[9px]" style="background:conic-gradient(#8bd4f1 {{[collection_rate,100]|min}}%,rgba(255,255,255,.05) 0)"><div class="h-full w-full rounded-full bg-[#08111c] grid place-items-center"><div class="text-center"><div class="text-[9px] uppercase tracking-[.15em] text-slate-600">Paid</div><div class="font-black text-lg">{{money(paid)}}</div></div></div></div>
+        <div class="min-w-[180px]"><div class="flex items-center justify-between text-xs"><span class="text-slate-600">Invoiced</span><span class="font-bold text-slate-300">{{money(invoiced)}}</span></div><div class="h-2 rounded-full bg-black/20 mt-2 overflow-hidden"><div class="h-full rounded-full bg-gradient-to-r from-rf-500 to-rf-300" style="width:{{[collection_rate,100]|min}}%"></div></div><div class="mt-3 flex items-center justify-between text-xs"><span class="text-slate-600">Outstanding</span><span class="font-bold">{{money(outstanding)}}</span></div></div>
+      </div>
     </div>
-    <div class="glass rounded-3xl p-5 sm:p-6"><div class="text-xs font-bold tracking-[.18em] text-rf-300">AGING</div><div class="space-y-3 mt-4">{% for bucket in ['Current','1–7 days','8–30 days','30+ days'] %}<div><div class="flex justify-between text-xs mb-1"><span class="text-slate-500">{{bucket}}</span><span class="font-semibold">{{money(aging[bucket])}}</span></div><div class="h-1.5 rounded-full bg-rf-950 overflow-hidden"><div class="h-full bg-rf-500 rounded-full" style="width: {{0 if outstanding==0 else [((aging[bucket]/outstanding)*100),100]|min}}%"></div></div></div>{% endfor %}</div></div>
+    <div class="rf-card p-5 sm:p-6">
+      <div class="rf-kicker">Aging exposure</div>
+      <div class="mt-5 space-y-3">
+        {% for bucket in ['Current','1–7 days','8–30 days','30+ days'] %}
+        <div><div class="flex items-center justify-between text-[11px] mb-1.5"><span class="text-slate-500">{{bucket}}</span><span class="font-bold">{{money(aging[bucket])}}</span></div><div class="h-1.5 rounded-full bg-black/20 overflow-hidden"><div class="h-full rounded-full bg-rf-500/80" style="width:{{0 if outstanding==0 else [((aging[bucket]/outstanding)*100),100]|min}}%"></div></div></div>
+        {% endfor %}
+      </div>
+    </div>
   </div>
-  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-7">
-    {% for label,value in [('Outstanding',outstanding),('Overdue',overdue),('Due today',due_today),('Customers',customers)] %}
-    <div class="glass rounded-2xl p-5 shadow-soft"><div class="text-xs font-semibold text-slate-500">{{label}}</div><div class="text-2xl md:text-3xl font-black mt-2">{% if label=='Customers' %}{{value}}{% else %}{{money(value)}}{% endif %}</div>{% if label=='Overdue' and value %}<div class="text-xs text-rose-300 mt-2">Needs attention</div>{% else %}<div class="text-xs text-slate-600 mt-2">Current position</div>{% endif %}</div>
+
+  <div class="mt-4 grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
+    {% for label,value,meta in [('Outstanding',outstanding,'Open cash to collect'),('Overdue',overdue,'Receivables past due'),('Due today',due_today,'Needs an action today'),('Customers',customers,'Active customer count')] %}
+    <div class="rf-card rf-card-hover p-5">
+      <div class="flex items-center justify-between"><div class="text-xs font-bold text-slate-600">{{label}}</div><span class="h-2 w-2 rounded-full {% if label=='Overdue' and value %}bg-rose-300{% elif label=='Due today' and value %}bg-amber-200{% else %}bg-cyan-200{% endif %}"></span></div>
+      <div class="mt-3 text-2xl md:text-3xl font-black">{% if label=='Customers' %}{{value}}{% else %}{{money(value)}}{% endif %}</div>
+      <div class="mt-2 text-[11px] text-slate-700">{{meta}}</div>
+    </div>
     {% endfor %}
   </div>
-  <div class="glass rounded-3xl overflow-hidden shadow-soft">
-    <div class="px-5 py-4 sm:px-6 border-b border-white/5 flex items-center justify-between"><div><h2 class="font-bold">Collection queue</h2><p class="text-xs text-slate-500 mt-1">Oldest due dates first</p></div><span class="text-xs px-2.5 py-1 rounded-full bg-white/5 text-slate-400">{{invoices|length}} invoices</span></div>
-    <div class="hidden md:block overflow-x-auto"><table class="w-full text-sm"><thead class="text-slate-500"><tr><th class="text-left px-6 py-3 font-semibold">Customer</th><th class="text-left px-6 py-3 font-semibold">Invoice</th><th class="text-right px-6 py-3 font-semibold">Balance</th><th class="text-left px-6 py-3 font-semibold">Age</th><th class="text-right px-6 py-3"></th></tr></thead><tbody>{% for i in invoices %}<tr class="border-t border-white/5 hover:bg-white/[.02]"><td class="px-6 py-4"><div class="font-semibold">{{i.customer_name}}</div><div class="text-xs text-slate-600 mt-1">{{i.phone or 'No phone'}}</div></td><td class="px-6 py-4 text-slate-400">{{i.invoice_number}}</td><td class="px-6 py-4 text-right font-black">{{money(i.balance)}}</td><td class="px-6 py-4">{% if i.days_overdue %}<span class="text-rose-300">{{i.days_overdue}} days overdue</span>{% else %}<span class="text-slate-400">{{i.aging_bucket}}</span>{% endif %}</td><td class="px-6 py-4 text-right"><a href="/invoices/{{i.id}}" class="text-rf-300 font-semibold">Open →</a></td></tr>{% else %}<tr><td colspan="5" class="px-6 py-16 text-center"><div class="font-bold">No invoices yet</div><div class="text-sm text-slate-500 mt-1">Add your first receivable to start the queue.</div></td></tr>{% endfor %}</tbody></table></div>
-    <div class="md:hidden divide-y divide-white/5">{% for i in invoices %}<a href="/invoices/{{i.id}}" class="block p-4 hover:bg-white/[.02]"><div class="flex items-start justify-between gap-3"><div><div class="font-bold">{{i.customer_name}}</div><div class="text-xs text-slate-600 mt-1">{{i.invoice_number}} · due {{i.due_date.strftime('%d %b %Y')}}</div></div><div class="text-right font-black">{{money(i.balance)}}</div></div><div class="mt-3 text-xs">{% if i.days_overdue %}<span class="text-rose-300">{{i.days_overdue}} days overdue</span>{% else %}<span class="text-slate-500">{{i.aging_bucket}}</span>{% endif %}</div></a>{% else %}<div class="p-12 text-center"><div class="font-bold">No invoices yet</div><div class="text-sm text-slate-500 mt-1">Add your first receivable to start the queue.</div></div>{% endfor %}</div>
+
+  <div class="mt-7 grid xl:grid-cols-[1.35fr_.65fr] gap-4">
+    <div class="rf-card overflow-hidden">
+      <div class="px-5 sm:px-6 py-5 border-b border-white/6 flex items-center justify-between"><div><div class="rf-kicker">Priority queue</div><h2 class="mt-1.5 font-bold text-lg">Receivables that need attention</h2></div><span class="rf-pill text-slate-500">{{invoices|length}} open</span></div>
+      <div class="hidden md:block overflow-x-auto rf-scroll"><table class="w-full text-sm"><thead><tr><th class="text-left px-6 py-3">Customer</th><th class="text-left px-6 py-3">Invoice</th><th class="text-left px-6 py-3">Status</th><th class="text-right px-6 py-3">Balance</th><th class="text-right px-6 py-3"></th></tr></thead><tbody>{% for i in invoices %}<tr class="hover:bg-white/[.018] transition"><td class="px-6 py-4"><div class="font-semibold text-slate-100">{{i.customer_name}}</div><div class="text-[11px] text-slate-600 mt-1">{{i.phone or 'No phone'}}</div></td><td class="px-6 py-4 text-slate-500">{{i.invoice_number}}<div class="text-[11px] mt-1">Due {{i.due_date.strftime('%d %b %Y')}}</div></td><td class="px-6 py-4">{% if i.days_overdue %}<span class="rf-pill text-rose-100 border-rose-300/10 bg-rose-300/[.035]">{{i.days_overdue}}d overdue</span>{% else %}<span class="rf-pill text-slate-400">{{i.aging_bucket}}</span>{% endif %}</td><td class="px-6 py-4 text-right font-black">{{money(i.balance)}}</td><td class="px-6 py-4 text-right"><a href="/invoices/{{i.id}}" class="text-cyan-100 font-bold text-xs">Open →</a></td></tr>{% else %}<tr><td colspan="5" class="px-6 py-16 text-center"><div class="mx-auto h-11 w-11 rounded-2xl border border-white/7 bg-white/[.02] grid place-items-center text-cyan-100">✓</div><div class="mt-4 font-bold">Queue is clear</div><div class="mt-1 text-sm text-slate-600">Add your first receivable to start the operating view.</div></td></tr>{% endfor %}</tbody></table></div>
+      <div class="md:hidden divide-y divide-white/6">{% for i in invoices %}<a href="/invoices/{{i.id}}" class="block p-4 hover:bg-white/[.02]"><div class="flex items-start justify-between gap-4"><div><div class="font-bold">{{i.customer_name}}</div><div class="text-[11px] text-slate-600 mt-1">{{i.invoice_number}} · due {{i.due_date.strftime('%d %b %Y')}}</div></div><div class="text-right font-black">{{money(i.balance)}}</div></div><div class="mt-3 text-xs">{% if i.days_overdue %}<span class="text-rose-200">{{i.days_overdue}} days overdue</span>{% else %}<span class="text-slate-600">{{i.aging_bucket}}</span>{% endif %}</div></a>{% else %}<div class="p-12 text-center text-slate-500">No invoices yet.</div>{% endfor %}</div>
+    </div>
+
+    <aside class="space-y-4">
+      <div class="rf-card p-5 sm:p-6">
+        <div class="rf-kicker">Collection playbook</div><h2 class="mt-2 text-lg font-bold">Keep the queue moving.</h2>
+        <div class="mt-5 space-y-3">
+          <div class="flex gap-3"><div class="h-8 w-8 rounded-xl bg-cyan-200/[.045] border border-cyan-200/8 grid place-items-center text-xs font-black">01</div><div><div class="text-sm font-semibold">Open overdue invoices</div><div class="text-[11px] text-slate-600 mt-1">Start with the oldest due date and highest balance.</div></div></div>
+          <div class="flex gap-3"><div class="h-8 w-8 rounded-xl bg-cyan-200/[.045] border border-cyan-200/8 grid place-items-center text-xs font-black">02</div><div><div class="text-sm font-semibold">Send one clear next step</div><div class="text-[11px] text-slate-600 mt-1">Payment link, WhatsApp reminder or direct follow-up.</div></div></div>
+          <div class="flex gap-3"><div class="h-8 w-8 rounded-xl bg-cyan-200/[.045] border border-cyan-200/8 grid place-items-center text-xs font-black">03</div><div><div class="text-sm font-semibold">Close the loop</div><div class="text-[11px] text-slate-600 mt-1">Mark paid or let the automated reminder cycle continue.</div></div></div>
+        </div>
+      </div>
+      <div class="rounded-[24px] border border-cyan-200/10 bg-cyan-200/[.025] p-5 sm:p-6"><div class="text-xs font-bold text-cyan-100">INDIA-READY WORKFLOW</div><div class="mt-2 text-sm font-bold">Payments, GST context and customer communication in one receivable.</div><a href="/settings" class="inline-flex mt-4 text-xs font-bold text-cyan-100">Configure integrations →</a></div>
+    </aside>
   </div>
-  <p class="text-xs text-slate-700 mt-4">CSV columns: invoice_number, customer_name, amount, issue_date, due_date, phone, email, paid_amount</p>
-</div>{% endblock %}
+  <p class="text-[10px] text-slate-800 mt-4">CSV columns: invoice_number, customer_name, amount, issue_date, due_date, phone, email, paid_amount</p>
+</section>{% endblock %}

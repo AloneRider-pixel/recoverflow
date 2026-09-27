@@ -1,14 +1,25 @@
 {% extends 'base.html' %}{% block content %}
-<section class="min-h-[calc(100vh-9rem)] grid place-items-center px-4 py-12"><div class="w-full max-w-md">
-  <div class="text-center mb-8"><div class="text-xs font-bold tracking-[.2em] text-rf-300">START YOUR WORKSPACE</div><h1 class="text-4xl font-black tracking-tight mt-2">Create your account</h1><p class="text-slate-500 mt-3">Bring invoices, follow-ups and collections into one place.</p></div>
-  <div class="glass rounded-3xl p-6 sm:p-7 shadow-soft">
-    {% if error %}<div class="mb-5 rounded-xl border border-rose-400/15 bg-rose-400/5 p-3.5 text-sm text-rose-200">{{error}}</div>{% endif %}
-    <form method="post" class="space-y-4">
-      <label class="block"><span class="text-xs font-bold text-slate-400">Company name</span><input name="company_name" required autocomplete="organization" class="mt-2 w-full rounded-xl bg-rf-950 border border-rf-700 px-4 py-3" placeholder="Your business"></label>
-      <label class="block"><span class="text-xs font-bold text-slate-400">Work email</span><input name="email" type="email" required autocomplete="email" class="mt-2 w-full rounded-xl bg-rf-950 border border-rf-700 px-4 py-3" placeholder="you@company.com"></label>
-      <label class="block"><span class="text-xs font-bold text-slate-400">Password</span><input name="password" type="password" minlength="8" required autocomplete="new-password" class="mt-2 w-full rounded-xl bg-rf-950 border border-rf-700 px-4 py-3" placeholder="At least 8 characters"></label>
-      <button class="w-full rounded-xl bg-white text-rf-950 font-extrabold py-3.5">Create workspace</button>
-    </form>
-    <p class="text-center text-sm text-slate-500 mt-6">Already have an account? <a href="/login" class="text-rf-300 font-semibold">Sign in</a></p>
+<section class="min-h-[calc(100vh-5rem)] relative overflow-hidden">
+  <div class="absolute inset-0 rf-grid opacity-50"></div>
+  <div class="max-w-6xl mx-auto px-4 py-10 md:py-16 grid lg:grid-cols-[.9fr_1.1fr] gap-10 items-center relative">
+    <div class="hidden lg:block">
+      <div class="inline-flex rf-pill text-cyan-100 border-cyan-200/10 bg-cyan-200/[.025]">Private workspace · role based</div>
+      <h1 class="mt-5 text-5xl xl:text-6xl font-black tracking-[-.05em]">Build a collection system your team can actually run.</h1>
+      <p class="mt-6 text-lg leading-8 text-slate-500 max-w-xl">Bring receivables, customer follow-ups, payment links and recurring invoices into one operating surface from day one.</p>
+      <div class="mt-8 space-y-3"><div class="rf-card p-4 flex gap-3"><span class="text-cyan-100 font-black">01</span><div><div class="text-sm font-bold">Create the workspace</div><div class="text-xs text-slate-600 mt-1">Start with your business identity and owner access.</div></div></div><div class="rf-card p-4 flex gap-3"><span class="text-cyan-100 font-black">02</span><div><div class="text-sm font-bold">Add your receivables</div><div class="text-xs text-slate-600 mt-1">Enter invoices or import a CSV.</div></div></div><div class="rf-card p-4 flex gap-3"><span class="text-cyan-100 font-black">03</span><div><div class="text-sm font-bold">Start collecting</div><div class="text-xs text-slate-600 mt-1">Create payment links and work the queue.</div></div></div></div>
+    </div>
+    <div class="max-w-xl w-full mx-auto">
+      <div class="text-center lg:text-left mb-7"><div class="rf-kicker">Start your workspace</div><h2 class="mt-2 text-3xl md:text-4xl font-black tracking-tight">Create your account</h2><p class="text-slate-600 mt-2">Your first workspace is created with owner access.</p></div>
+      <div class="glass rounded-[28px] p-6 sm:p-7 shadow-panel">
+        {% if error %}<div class="mb-5 rounded-2xl border border-rose-300/10 bg-rose-300/[.035] p-3.5 text-sm text-rose-100">{{error}}</div>{% endif %}
+        <form method="post" class="space-y-4">
+          <label class="block"><span class="rf-label">Company name</span><input name="company_name" required autocomplete="organization" class="rf-input mt-2" placeholder="Your business"></label>
+          <label class="block"><span class="rf-label">Work email</span><input name="email" type="email" required autocomplete="email" class="rf-input mt-2" placeholder="you@company.com"></label>
+          <label class="block"><span class="rf-label">Password</span><input name="password" type="password" minlength="8" required autocomplete="new-password" class="rf-input mt-2" placeholder="At least 8 characters"></label>
+          <button class="rf-btn-primary w-full py-3.5 mt-1">Create workspace</button>
+        </form>
+        <div class="mt-6 pt-5 border-t border-white/6 text-center text-sm text-slate-600">Already have an account? <a href="/login" class="text-cyan-100 font-bold">Sign in</a></div>
+      </div>
+    </div>
   </div>
-</div></section>{% endblock %}
+</section>{% endblock %}

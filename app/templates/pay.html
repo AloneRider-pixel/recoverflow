@@ -1,30 +1,13 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#07111f">
-<title>Pay invoice · RecoverFlow</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<style>body{background:radial-gradient(800px 420px at 50% -10%,rgba(83,165,221,.18),transparent 65%),#07111f}</style>
-</head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#050a12"><title>Pay {{invoice.invoice_number}} · RecoverFlow</title><script src="https://cdn.tailwindcss.com"></script><style>body{background:radial-gradient(800px 500px at 50% -8%,rgba(69,168,212,.16),transparent 62%),#050a12}.panel{background:linear-gradient(180deg,rgba(14,27,41,.88),rgba(7,14,23,.82));border:1px solid rgba(148,196,221,.12);box-shadow:0 30px 100px rgba(0,0,0,.38)}</style></head>
 <body class="min-h-screen text-slate-100 antialiased">
-<main class="min-h-screen grid place-items-center px-4 py-10">
-<div class="w-full max-w-lg">
-<div class="flex items-center justify-center gap-3 mb-8"><div class="h-10 w-10 rounded-xl bg-cyan-200 text-[#07111f] grid place-items-center font-black text-xl">↗</div><div class="font-black text-xl">RecoverFlow</div></div>
-<div class="rounded-3xl border border-white/10 bg-white/[.035] backdrop-blur-xl p-6 sm:p-8 shadow-2xl">
-<div class="text-[11px] tracking-[.2em] font-bold text-cyan-200">SECURE PAYMENT REQUEST</div>
-<h1 class="text-3xl font-black mt-3">{{company_name}}</h1>
-<p class="text-slate-500 mt-2">Invoice {{invoice.invoice_number}} · {{invoice.customer_name}}</p>
-<div class="my-7 p-5 rounded-2xl bg-[#081522] border border-white/5"><div class="text-xs text-slate-500">Amount due</div><div class="text-4xl font-black mt-1">{{money(invoice.balance)}}</div>{% if invoice.due_date %}<div class="text-xs text-slate-500 mt-2">Due {{invoice.due_date.strftime('%d %b %Y')}}</div>{% endif %}</div>
-{% if payment_link %}
-<a href="{{payment_link.short_url}}" class="block w-full text-center px-5 py-3.5 rounded-xl bg-white text-[#07111f] font-extrabold">Pay securely</a>
-<div class="text-center text-xs text-slate-600 mt-4">Payment is processed securely by Razorpay. Available payment methods depend on the merchant's enabled checkout configuration.</div>
-{% else %}
-<div class="rounded-xl border border-amber-300/10 bg-amber-300/5 p-4 text-sm text-amber-100">The payment link for this invoice has not been activated yet. Please contact {{company_name}}.</div>
-{% endif %}
-<div class="mt-7 pt-5 border-t border-white/5 text-center text-xs text-slate-600">Please verify the invoice number and amount before paying.</div>
-</div>
-</div>
-</main>
-</body>
-</html>
+<main class="min-h-screen grid place-items-center px-4 py-10"><div class="w-full max-w-xl">
+  <div class="flex items-center justify-center gap-3 mb-8"><div class="h-10 w-10 rounded-[13px] bg-gradient-to-br from-cyan-100 to-sky-600 text-[#07111b] grid place-items-center font-black">↗</div><div class="font-black text-xl">RecoverFlow</div></div>
+  <div class="panel rounded-[30px] p-6 sm:p-8">
+    <div class="flex items-center justify-between gap-4"><div><div class="text-[10px] uppercase tracking-[.22em] font-black text-cyan-100">Secure payment request</div><div class="text-xs text-slate-600 mt-2">Issued by {{company_name}}</div></div><span class="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-100"><span class="h-1.5 w-1.5 rounded-full bg-emerald-300"></span>Secure checkout</span></div>
+    <h1 class="mt-7 text-3xl md:text-4xl font-black tracking-tight">{{invoice.customer_name}}</h1><p class="text-sm text-slate-600 mt-2">Invoice {{invoice.invoice_number}}{% if invoice.due_date %} · due {{invoice.due_date.strftime('%d %b %Y')}}{% endif %}</p>
+    <div class="mt-7 rounded-[24px] border border-white/7 bg-black/10 p-5"><div class="text-[10px] uppercase tracking-[.18em] text-slate-700">Amount due</div><div class="mt-2 text-4xl md:text-5xl font-black tracking-[-.04em]">{{money(invoice.balance)}}</div></div>
+    {% if payment_link %}<a href="{{payment_link.short_url}}" class="mt-5 flex items-center justify-center rounded-2xl bg-white text-[#07111b] px-5 py-4 font-extrabold shadow-[0_14px_34px_rgba(255,255,255,.08)]">Continue to secure payment ↗</a><div class="mt-4 text-center text-[10px] leading-5 text-slate-700">Payment is processed by Razorpay. Available methods depend on the merchant's enabled checkout configuration.</div>{% else %}<div class="mt-5 rounded-2xl border border-amber-200/10 bg-amber-200/[.03] p-4 text-sm text-amber-100">The payment link for this invoice is not active yet. Please contact {{company_name}}.</div>{% endif %}
+    <div class="mt-7 pt-5 border-t border-white/6 text-center text-[10px] text-slate-700">Verify the invoice number and amount before paying.</div>
+  </div>
+</div></main></body></html>

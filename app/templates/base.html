@@ -3,65 +3,167 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#07111f">
-  <meta name="description" content="RecoverFlow — automate receivables, follow-ups and payments for growing businesses.">
+  <meta name="theme-color" content="#050a12">
+  <meta name="description" content="RecoverFlow — receivables operations, payment collection and follow-ups for growing businesses.">
   <title>{{ title or 'RecoverFlow' }}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
-          colors: { rf: { 950:'#07111f', 900:'#0b1728', 800:'#102036', 700:'#18304b', 600:'#245079', 500:'#2f7dbb', 400:'#53a5dd', 300:'#8dcef1' } },
-          boxShadow: { soft:'0 18px 50px rgba(0,0,0,.22)', glow:'0 0 0 1px rgba(83,165,221,.12), 0 18px 60px rgba(47,125,187,.16)' }
+          colors: {
+            rf: {
+              950:'#050a12', 900:'#08111c', 800:'#0d1926', 700:'#132536',
+              600:'#1b3b54', 500:'#2c7aa7', 400:'#45a8d4', 300:'#8bd4f1', 200:'#c7edfb'
+            }
+          },
+          boxShadow: {
+            panel:'0 22px 70px rgba(0,0,0,.26)',
+            soft:'0 12px 35px rgba(0,0,0,.18)',
+            glow:'0 0 0 1px rgba(139,212,241,.12),0 20px 80px rgba(69,168,212,.13)'
+          }
         }
       }
     }
   </script>
   <style>
+    :root{
+      --rf-bg:#050a12;--rf-panel:rgba(10,18,29,.78);--rf-border:rgba(148,196,221,.11);
+      --rf-muted:#718195;--rf-text:#f3f7fa;--rf-accent:#8bd4f1;--rf-accent-strong:#45a8d4;
+    }
     html{scroll-behavior:smooth}
-    body{background:radial-gradient(900px 500px at 85% -10%,rgba(47,125,187,.18),transparent 65%),#07111f}
-    .glass{background:rgba(11,23,40,.72);backdrop-filter:blur(18px);border:1px solid rgba(141,206,241,.10)}
-    .grid-bg{background-image:linear-gradient(rgba(141,206,241,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(141,206,241,.05) 1px,transparent 1px);background-size:38px 38px}
-    .text-balance{text-wrap:balance}
+    body{
+      background:
+        radial-gradient(900px 480px at 85% -10%,rgba(69,168,212,.14),transparent 64%),
+        radial-gradient(700px 420px at 8% 8%,rgba(61,116,167,.10),transparent 60%),
+        var(--rf-bg);
+      color:var(--rf-text);
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif
+    }
+    body:before{
+      content:"";position:fixed;inset:0;pointer-events:none;opacity:.26;mix-blend-mode:screen;
+      background-image:radial-gradient(rgba(255,255,255,.06) .7px,transparent .7px);background-size:5px 5px;z-index:-1
+    }
+    .glass{background:linear-gradient(180deg,rgba(15,28,42,.82),rgba(8,16,26,.72));backdrop-filter:blur(20px);border:1px solid var(--rf-border);box-shadow:0 18px 55px rgba(0,0,0,.16)}
+    .rf-card{border:1px solid var(--rf-border);background:linear-gradient(180deg,rgba(14,27,41,.78),rgba(8,16,26,.73));border-radius:24px}
+    .rf-card-hover{transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease}.rf-card-hover:hover{transform:translateY(-2px);border-color:rgba(139,212,241,.20);box-shadow:0 25px 60px rgba(0,0,0,.22)}
+    .rf-grid{background-image:linear-gradient(rgba(139,212,241,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(139,212,241,.045) 1px,transparent 1px);background-size:36px 36px}
+    .rf-kicker{font-size:10px;letter-spacing:.22em;text-transform:uppercase;font-weight:800;color:var(--rf-accent)}
+    .rf-label{font-size:12px;font-weight:700;color:#8290a0}
+    .rf-input{width:100%;border-radius:14px;background:#07101a;border:1px solid #183044;padding:.82rem 1rem;color:#eef6fa;transition:border-color .2s,box-shadow .2s,background .2s}
+    .rf-input::placeholder{color:#445465}.rf-input:focus{outline:none;border-color:rgba(139,212,241,.48);box-shadow:0 0 0 4px rgba(69,168,212,.10);background:#08131f}
+    .rf-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;border-radius:14px;background:linear-gradient(135deg,#f7fcff,#cdeaf7);color:#07111b;font-weight:800;padding:.78rem 1.05rem;box-shadow:0 12px 30px rgba(139,212,241,.12);transition:transform .18s,box-shadow .18s}
+    .rf-btn-primary:hover{transform:translateY(-1px);box-shadow:0 18px 38px rgba(139,212,241,.16)}
+    .rf-btn-secondary{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;border-radius:14px;background:rgba(255,255,255,.025);border:1px solid rgba(148,196,221,.13);color:#dbe7ee;font-weight:700;padding:.78rem 1.05rem;transition:all .18s}
+    .rf-btn-secondary:hover{background:rgba(255,255,255,.05);border-color:rgba(139,212,241,.22)}
+    .rf-pill{display:inline-flex;align-items:center;gap:.4rem;padding:.28rem .58rem;border-radius:999px;border:1px solid rgba(148,196,221,.10);background:rgba(255,255,255,.035);font-size:11px;font-weight:800}
+    .rf-nav-item{display:flex;align-items:center;gap:.7rem;padding:.68rem .76rem;border-radius:13px;color:#8392a2;font-size:13px;font-weight:700;transition:all .18s}
+    .rf-nav-item:hover{color:#eef8fc;background:rgba(255,255,255,.035)}
+    .rf-nav-item.active{color:#e9f7fd;background:linear-gradient(90deg,rgba(69,168,212,.14),rgba(69,168,212,.045));box-shadow:inset 0 0 0 1px rgba(139,212,241,.08)}
+    .rf-nav-dot{width:7px;height:7px;border-radius:999px;background:#566777;box-shadow:0 0 0 4px transparent;transition:.18s}
+    .rf-nav-item.active .rf-nav-dot{background:#8bd4f1;box-shadow:0 0 0 4px rgba(139,212,241,.08)}
+    .rf-shell{min-height:calc(100vh - 1px)}
+    .rf-sidebar{width:250px;position:fixed;left:0;top:0;bottom:0;z-index:50;background:linear-gradient(180deg,rgba(5,10,18,.96),rgba(5,10,18,.90));border-right:1px solid rgba(148,196,221,.09);backdrop-filter:blur(22px)}
+    .rf-main{margin-left:250px;min-height:100vh}
+    .rf-topbar{height:74px;border-bottom:1px solid rgba(148,196,221,.08);background:rgba(5,10,18,.74);backdrop-filter:blur(18px);position:sticky;top:0;z-index:30}
+    .rf-mobile-top{display:none}
+    .rf-avatar{height:34px;width:34px;border-radius:11px;background:linear-gradient(135deg,#dff6ff,#559dbe);color:#08111b;display:grid;place-items:center;font-size:11px;font-weight:900}
+    .rf-scroll::-webkit-scrollbar{width:8px;height:8px}.rf-scroll::-webkit-scrollbar-thumb{background:#223547;border-radius:99px}
+    table th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:800;color:#647588}
+    table td{border-top:1px solid rgba(148,196,221,.055)}
     input,textarea,select{outline:none}
-    input:focus,textarea:focus,select:focus{box-shadow:0 0 0 3px rgba(83,165,221,.13);border-color:rgba(83,165,221,.55)!important}
+    @media(max-width:1023px){.rf-sidebar{transform:translateX(-100%);transition:transform .22s ease;box-shadow:30px 0 90px rgba(0,0,0,.4)}.rf-sidebar.open{transform:translateX(0)}.rf-main{margin-left:0}.rf-topbar{height:64px}.rf-mobile-top{display:flex}.rf-desktop-top{display:none}}
+    @media(max-width:640px){.rf-card{border-radius:20px}}
   </style>
 </head>
-<body class="min-h-screen text-slate-100 antialiased">
-  <nav class="sticky top-0 z-40 border-b border-white/5 bg-rf-950/85 backdrop-blur-xl">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-      <a href="{% if user %}/{% else %}/welcome{% endif %}" class="flex items-center gap-3 group">
-        <span class="h-9 w-9 rounded-xl bg-gradient-to-br from-rf-300 via-rf-500 to-rf-700 grid place-items-center shadow-glow">
-          <svg viewBox="0 0 24 24" class="h-5 w-5 text-white" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16M12 4v16"/><circle cx="12" cy="12" r="8"/></svg>
-        </span>
-        <span class="font-extrabold tracking-tight text-lg">RecoverFlow</span>
-      </a>
-      {% if user %}
-      <div class="hidden md:flex items-center gap-1 text-sm">
-        <a href="/" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Overview</a>
-        <a href="/customers" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Customers</a>
-        <a href="/recurring" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Recurring</a>
-        {% if user.role in ['owner','admin'] %}<a href="/team" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Team</a><a href="/audit" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Audit</a><a href="/billing" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Billing</a><a href="/settings" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Settings</a>{% else %}<a href="/settings" class="px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Settings</a>{% endif %}
-      </div>
-      <div class="flex items-center gap-2">
-        <div class="hidden sm:block text-right mr-2">
-          <div class="text-xs text-slate-500">Workspace</div>
-          <div class="text-sm font-medium truncate max-w-32">{{user.company_name}}</div>
-        </div>
-        <a href="/invoices/new" class="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white text-rf-950 font-bold text-sm shadow-soft hover:translate-y-[-1px] transition">
-          <span class="text-lg leading-none">+</span> Invoice
+<body class="min-h-screen antialiased">
+{% if user %}
+<div class="rf-shell">
+  <aside id="rfSidebar" class="rf-sidebar">
+    <div class="h-full flex flex-col">
+      <div class="px-5 pt-5 pb-4">
+        <a href="/" class="flex items-center gap-3 group">
+          <span class="h-10 w-10 rounded-[14px] bg-gradient-to-br from-cyan-100 via-rf-300 to-rf-600 grid place-items-center text-rf-950 shadow-glow">
+            <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.1"><path d="M5 17 12 10l3 3 4-6"/><path d="M5 20h14"/></svg>
+          </span>
+          <div><div class="font-black tracking-tight text-[16px]">RecoverFlow</div><div class="text-[10px] text-slate-600 mt-0.5 tracking-[.12em] uppercase">Receivables OS</div></div>
         </a>
-        <form method="post" action="/logout" class="hidden sm:block"><button class="px-3 py-2 text-sm text-slate-400 hover:text-white">Log out</button></form>
       </div>
-      {% else %}
-      <div class="flex items-center gap-2">
-        <a href="/login" class="px-3.5 py-2.5 text-sm text-slate-300 hover:text-white">Sign in</a>
-        <a href="/register" class="px-4 py-2.5 rounded-xl bg-white text-rf-950 font-bold text-sm shadow-soft">Start free</a>
+
+      <div class="px-3">
+        <div class="px-2 mb-2 text-[9px] uppercase tracking-[.2em] text-slate-700 font-black">Workspace</div>
+        <a href="/" class="rf-nav-item {% if request.url.path=='/' %}active{% endif %}"><span class="rf-nav-dot"></span>Overview</a>
+        <a href="/customers" class="rf-nav-item {% if request.url.path.startswith('/customers') %}active{% endif %}"><span class="rf-nav-dot"></span>Customers</a>
+        <a href="/recurring" class="rf-nav-item {% if request.url.path.startswith('/recurring') %}active{% endif %}"><span class="rf-nav-dot"></span>Recurring</a>
       </div>
-      {% endif %}
+
+      <div class="px-3 mt-5">
+        <div class="px-2 mb-2 text-[9px] uppercase tracking-[.2em] text-slate-700 font-black">Operations</div>
+        {% if user.role in ['owner','admin'] %}
+        <a href="/team" class="rf-nav-item {% if request.url.path.startswith('/team') or request.url.path.startswith('/invite') %}active{% endif %}"><span class="rf-nav-dot"></span>Team & access</a>
+        <a href="/audit" class="rf-nav-item {% if request.url.path.startswith('/audit') %}active{% endif %}"><span class="rf-nav-dot"></span>Audit trail</a>
+        <a href="/billing" class="rf-nav-item {% if request.url.path.startswith('/billing') %}active{% endif %}"><span class="rf-nav-dot"></span>Billing</a>
+        {% endif %}
+        <a href="/settings" class="rf-nav-item {% if request.url.path.startswith('/settings') %}active{% endif %}"><span class="rf-nav-dot"></span>Settings</a>
+      </div>
+
+      <div class="mt-auto p-4">
+        <div class="rounded-2xl border border-white/7 bg-white/[.025] p-3">
+          <div class="flex items-center gap-3">
+            <div class="rf-avatar">{{(user.email[:2] if user.email else 'RF')|upper}}</div>
+            <div class="min-w-0"><div class="text-xs text-slate-400 truncate">{{user.email}}</div><div class="text-[10px] text-slate-700 mt-0.5 uppercase tracking-[.12em]">{{user.role}}</div></div>
+          </div>
+          <form method="post" action="/logout" class="mt-3">
+            <button class="w-full text-left text-xs text-slate-500 hover:text-white rounded-lg px-2 py-2 hover:bg-white/[.035]">Sign out</button>
+          </form>
+        </div>
+      </div>
     </div>
-  </nav>
-  <main>{% block content %}{% endblock %}</main>
-  <footer class="max-w-7xl mx-auto px-4 sm:px-6 py-10 text-xs text-slate-600">RecoverFlow · Receivables operations for modern teams</footer>
+  </aside>
+
+  <div class="rf-main">
+    <header class="rf-topbar">
+      <div class="max-w-[1500px] mx-auto h-full px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
+        <div class="rf-mobile-top items-center gap-3">
+          <button id="rfMenu" type="button" aria-label="Open navigation" class="h-10 w-10 rounded-xl border border-white/8 bg-white/[.025] grid place-items-center">
+            <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          </button>
+          <div class="font-black text-sm">RecoverFlow</div>
+        </div>
+        <div class="rf-desktop-top flex items-center gap-3">
+          <div class="text-xs text-slate-600">Workspace</div>
+          <div class="rf-pill text-slate-300 max-w-72 truncate">{{user.company_name}}</div>
+          <div class="hidden xl:flex items-center gap-2 text-xs text-slate-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>Operational</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <a href="/invoices/new" class="rf-btn-primary text-xs sm:text-sm"><span class="text-base leading-none">+</span> New invoice</a>
+          <a href="/settings" class="rf-avatar">{{(user.email[:2] if user.email else 'RF')|upper}}</a>
+        </div>
+      </div>
+    </header>
+    <main>{% block content %}{% endblock %}</main>
+    <footer class="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-8 text-[10px] tracking-[.12em] uppercase text-slate-800">RecoverFlow · Receivables operations for modern teams</footer>
+  </div>
+</div>
+{% else %}
+<nav class="sticky top-0 z-40 border-b border-white/7 bg-rf-950/80 backdrop-blur-xl">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+    <a href="/welcome" class="flex items-center gap-3 group">
+      <span class="h-9 w-9 rounded-[12px] bg-gradient-to-br from-cyan-100 to-rf-500 text-rf-950 grid place-items-center shadow-glow">
+        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 17 12 10l3 3 4-6"/><path d="M5 20h14"/></svg>
+      </span>
+      <span class="font-black tracking-tight">RecoverFlow</span>
+    </a>
+    <div class="hidden md:flex items-center gap-7 text-sm text-slate-500"><a href="/welcome#product" class="hover:text-white">Product</a><a href="/welcome#workflow" class="hover:text-white">How it works</a><a href="/welcome#pricing" class="hover:text-white">Plans</a></div>
+    <div class="flex items-center gap-2"><a href="/login" class="px-3 py-2.5 text-sm text-slate-400 hover:text-white">Sign in</a><a href="/register" class="rf-btn-primary text-sm">Start free</a></div>
+  </div>
+</nav>
+<main>{% block content %}{% endblock %}</main>
+<footer class="max-w-7xl mx-auto px-4 sm:px-6 py-10 text-xs text-slate-700">RecoverFlow · Receivables operations for modern teams</footer>
+{% endif %}
+<script>
+  const menu=document.getElementById('rfMenu'), sidebar=document.getElementById('rfSidebar');
+  if(menu&&sidebar){menu.addEventListener('click',()=>sidebar.classList.toggle('open'));document.addEventListener('click',e=>{if(window.innerWidth<1024&&sidebar.classList.contains('open')&&!sidebar.contains(e.target)&&!menu.contains(e.target))sidebar.classList.remove('open')});}
+</script>
 </body>
 </html>

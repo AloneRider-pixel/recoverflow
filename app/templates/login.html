@@ -1,14 +1,24 @@
 {% extends 'base.html' %}{% block content %}
-<section class="min-h-[calc(100vh-9rem)] grid place-items-center px-4 py-12"><div class="w-full max-w-md">
-  <div class="text-center mb-8"><div class="text-xs font-bold tracking-[.2em] text-rf-300">WELCOME BACK</div><h1 class="text-4xl font-black tracking-tight mt-2">Sign in to RecoverFlow</h1><p class="text-slate-500 mt-3">Your collection workspace is waiting.</p></div>
-  <div class="glass rounded-3xl p-6 sm:p-7 shadow-soft">
-    {% if error %}<div class="mb-5 rounded-xl border border-rose-400/15 bg-rose-400/5 p-3.5 text-sm text-rose-200">{{error}}</div>{% endif %}
-    <form method="post" class="space-y-4">
-      <label class="block"><span class="text-xs font-bold text-slate-400">Email</span><input name="email" type="email" autocomplete="email" required class="mt-2 w-full rounded-xl bg-rf-950 border border-rf-700 px-4 py-3" placeholder="you@company.com"></label>
-      <label class="block"><span class="text-xs font-bold text-slate-400">Password</span><input name="password" type="password" autocomplete="current-password" required class="mt-2 w-full rounded-xl bg-rf-950 border border-rf-700 px-4 py-3" placeholder="Your password"></label>
-      <button class="w-full rounded-xl bg-white text-rf-950 font-extrabold py-3.5 hover:-translate-y-px transition">Sign in</button>
-    </form>
-    <div class="flex items-center gap-3 my-6 text-xs text-slate-600"><span class="h-px bg-white/5 flex-1"></span><span>NEW TO RECOVERFLOW?</span><span class="h-px bg-white/5 flex-1"></span></div>
-    <a href="/register" class="block text-center rounded-xl border border-rf-700 bg-white/[.02] py-3 font-bold hover:bg-white/[.04]">Create your workspace</a>
+<section class="min-h-[calc(100vh-5rem)] relative overflow-hidden">
+  <div class="absolute inset-0 rf-grid opacity-50"></div>
+  <div class="max-w-6xl mx-auto px-4 py-12 md:py-20 grid lg:grid-cols-[1fr_460px] gap-12 items-center relative">
+    <div class="hidden lg:block">
+      <div class="rf-kicker">Secure workspace access</div>
+      <h1 class="mt-4 text-5xl xl:text-6xl font-black tracking-[-.045em]">Your collection desk,<br><span class="text-cyan-100">already organized.</span></h1>
+      <p class="mt-6 max-w-xl text-lg leading-8 text-slate-500">Sign in to continue working your invoice queue, customer portfolio, payment links and follow-up operations.</p>
+      <div class="mt-8 grid sm:grid-cols-2 gap-3 max-w-xl"><div class="rf-card p-5"><div class="text-cyan-100 text-sm font-bold">Cash visibility</div><div class="text-xs text-slate-600 mt-2">Outstanding, overdue and aging in one surface.</div></div><div class="rf-card p-5"><div class="text-cyan-100 text-sm font-bold">Team controls</div><div class="text-xs text-slate-600 mt-2">Role-based access and an auditable workspace.</div></div></div>
+    </div>
+    <div>
+      <div class="text-center lg:text-left mb-7"><div class="rf-kicker">Welcome back</div><h2 class="mt-2 text-3xl md:text-4xl font-black tracking-tight">Sign in to RecoverFlow</h2><p class="text-slate-600 mt-2">Continue where your collection queue left off.</p></div>
+      <div class="glass rounded-[28px] p-6 sm:p-7 shadow-panel">
+        {% if error %}<div class="mb-5 rounded-2xl border border-rose-300/10 bg-rose-300/[.035] p-3.5 text-sm text-rose-100">{{error}}</div>{% endif %}
+        <form method="post" class="space-y-4">
+          <label class="block"><span class="rf-label">Work email</span><input name="email" type="email" autocomplete="email" required class="rf-input mt-2" placeholder="you@company.com"></label>
+          <label class="block"><div class="flex items-center justify-between"><span class="rf-label">Password</span><span class="text-[10px] text-slate-700">Protected session</span></div><input name="password" type="password" autocomplete="current-password" required class="rf-input mt-2" placeholder="Your password"></label>
+          <button class="rf-btn-primary w-full py-3.5 mt-1">Sign in</button>
+        </form>
+        <div class="mt-7 pt-5 border-t border-white/6 text-center"><div class="text-xs text-slate-600">New to RecoverFlow?</div><a href="/register" class="mt-2 inline-flex text-sm font-bold text-cyan-100">Create a workspace →</a></div>
+      </div>
+    </div>
   </div>
-</div></section>{% endblock %}
+</section>{% endblock %}

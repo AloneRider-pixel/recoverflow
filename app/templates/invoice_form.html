@@ -1,13 +1,26 @@
 {% extends 'base.html' %}{% block content %}
-<section class="max-w-3xl mx-auto px-4 sm:px-6 py-8"><div class="mb-8"><div class="text-xs font-bold tracking-[.2em] text-rf-300">NEW RECEIVABLE</div><h1 class="text-3xl md:text-4xl font-black mt-2">Add invoice</h1><p class="text-slate-500 mt-2">Create a receivable and give your collections queue a clear next action.</p></div>
-<div class="glass rounded-3xl p-5 sm:p-7 shadow-soft"><form method="post" class="grid md:grid-cols-2 gap-4"><input type="hidden" name="csrf" value="{{csrf}}">
-{% for name,label,type,value in [('invoice_number','Invoice number','text',''),('customer_name','Customer','text',''),('phone','Phone / WhatsApp','text',''),('email','Email','email',''),('amount','Invoice amount','number',''),('paid_amount','Paid amount','number','0'),('issue_date','Issue date','date',today.isoformat()),('due_date','Due date','date',today.isoformat())] %}
-<label class="block"><span class="text-xs font-bold text-slate-400">{{label}}</span><input name="{{name}}" type="{{type}}" value="{{value}}" step="0.01" required class="mt-2 w-full rounded-xl bg-rf-950 border border-rf-700 px-4 py-3"></label>{% endfor %}
-<div class="md:col-span-2 pt-5 mt-2 border-t border-white/5"><div class="text-xs font-bold tracking-[.18em] text-rf-300">INDIA-READY BUSINESS DETAILS</div><p class="text-xs text-slate-600 mt-1">Optional fields for GST-aware internal records and reconciliation.</p></div>
-<label class="block"><span class="text-xs font-bold text-slate-400">Customer GSTIN</span><input name="gstin" type="text" class="mt-2 w-full rounded-xl bg-rf-950 border border-rf-700 px-4 py-3" placeholder="22AAAAA0000A1Z5"></label>
-<label class="block"><span class="text-xs font-bold text-slate-400">Place of supply</span><input name="place_of_supply" type="text" class="mt-2 w-full rounded-xl bg-rf-950 border border-rf-700 px-4 py-3" placeholder="Karnataka"></label>
-<label class="block"><span class="text-xs font-bold text-slate-400">Tax rate (%)</span><input name="tax_rate" type="number" min="0" step="0.01" class="mt-2 w-full rounded-xl bg-rf-950 border border-rf-700 px-4 py-3" placeholder="18"></label>
-<label class="block"><span class="text-xs font-bold text-slate-400">Tax amount</span><input name="tax_amount" type="number" min="0" step="0.01" class="mt-2 w-full rounded-xl bg-rf-950 border border-rf-700 px-4 py-3" placeholder="0"></label>
-<label class="block"><span class="text-xs font-bold text-slate-400">TDS amount</span><input name="tds_amount" type="number" min="0" step="0.01" class="mt-2 w-full rounded-xl bg-rf-950 border border-rf-700 px-4 py-3" placeholder="0"></label>
-<div class="md:col-span-2 flex flex-col sm:flex-row gap-3 pt-3"><button class="px-5 py-3 rounded-xl bg-white text-rf-950 font-extrabold">Save invoice</button><a href="/" class="px-5 py-3 rounded-xl border border-rf-700 text-center font-semibold">Cancel</a></div>
-</form></div></section>{% endblock %}
+<section class="max-w-[1120px] mx-auto px-4 sm:px-6 lg:px-8 py-7 lg:py-9">
+  <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-5"><div><div class="rf-kicker">New receivable</div><h1 class="mt-2 text-3xl md:text-5xl font-black tracking-[-.04em]">Create invoice</h1><p class="mt-3 text-sm md:text-[15px] text-slate-500 max-w-2xl">Capture the commercial facts once, then let the collection workflow carry them forward.</p></div><a href="/" class="rf-btn-secondary text-sm">← Back to queue</a></div>
+
+  <div class="mt-7 grid lg:grid-cols-[1fr_320px] gap-5 items-start">
+    <div class="rf-card p-5 sm:p-7">
+      <form method="post" class="grid md:grid-cols-2 gap-4"><input type="hidden" name="csrf" value="{{csrf}}">
+        <div class="md:col-span-2"><div class="rf-kicker">Commercial details</div><p class="text-xs text-slate-700 mt-1">Identity, contact and value.</p></div>
+        {% for name,label,type,value in [('invoice_number','Invoice number','text',''),('customer_name','Customer','text',''),('phone','Phone / WhatsApp','text',''),('email','Email','email',''),('amount','Invoice amount','number',''),('paid_amount','Paid amount','number','0'),('issue_date','Issue date','date',today.isoformat()),('due_date','Due date','date',today.isoformat())] %}
+        <label class="block"><span class="rf-label">{{label}}</span><input name="{{name}}" type="{{type}}" value="{{value}}" step="0.01" required class="rf-input mt-2"></label>
+        {% endfor %}
+        <div class="md:col-span-2 pt-5 mt-2 border-t border-white/6"><div class="rf-kicker">India-ready business details</div><p class="text-xs text-slate-700 mt-1">Optional fields for GST-aware internal records and reconciliation.</p></div>
+        <label class="block"><span class="rf-label">Customer GSTIN</span><input name="gstin" class="rf-input mt-2" placeholder="22AAAAA0000A1Z5"></label>
+        <label class="block"><span class="rf-label">Place of supply</span><input name="place_of_supply" class="rf-input mt-2" placeholder="Karnataka"></label>
+        <label class="block"><span class="rf-label">Tax rate (%)</span><input name="tax_rate" type="number" min="0" step="0.01" class="rf-input mt-2" placeholder="18"></label>
+        <label class="block"><span class="rf-label">Tax amount</span><input name="tax_amount" type="number" min="0" step="0.01" class="rf-input mt-2" placeholder="0"></label>
+        <label class="block"><span class="rf-label">TDS amount</span><input name="tds_amount" type="number" min="0" step="0.01" class="rf-input mt-2" placeholder="0"></label>
+        <div class="md:col-span-2 flex flex-col sm:flex-row gap-3 pt-3"><button class="rf-btn-primary px-6">Save invoice</button><a href="/" class="rf-btn-secondary px-6">Cancel</a></div>
+      </form>
+    </div>
+    <aside class="space-y-4">
+      <div class="rf-card p-5"><div class="rf-kicker">Before you save</div><div class="mt-4 space-y-3 text-sm"><div class="flex gap-3"><span class="text-cyan-100 font-black">01</span><span class="text-slate-500">Use the same customer name and contact details across recurring invoices.</span></div><div class="flex gap-3"><span class="text-cyan-100 font-black">02</span><span class="text-slate-500">Enter the actual outstanding amount already paid where applicable.</span></div><div class="flex gap-3"><span class="text-cyan-100 font-black">03</span><span class="text-slate-500">Add tax context when your internal finance workflow needs it.</span></div></div></div>
+      <div class="rounded-[24px] border border-cyan-200/10 bg-cyan-200/[.022] p-5"><div class="text-xs font-bold text-cyan-100">Next step</div><div class="text-sm font-bold mt-2">Create a payment link from the invoice detail page.</div></div>
+    </aside>
+  </div>
+</section>{% endblock %}
