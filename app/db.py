@@ -29,8 +29,8 @@ def init_db():
                 for statement in statements: conn.execute(text(statement))
     user_columns = {c["name"] for c in inspector.get_columns("users")}
     user_statements = []
-    if "trial_started_at" not in user_columns: user_statements.append("ALTER TABLE users ADD COLUMN trial_started_at DATETIME")
-    if "trial_ends_at" not in user_columns: user_statements.append("ALTER TABLE users ADD COLUMN trial_ends_at DATETIME")
+    if "trial_started_at" not in user_columns: user_statements.append("ALTER TABLE users ADD COLUMN trial_started_at TIMESTAMP")
+    if "trial_ends_at" not in user_columns: user_statements.append("ALTER TABLE users ADD COLUMN trial_ends_at TIMESTAMP")
     if "workspace_id" not in user_columns: user_statements.append("ALTER TABLE users ADD COLUMN workspace_id INTEGER")
     if "role" not in user_columns: user_statements.append("ALTER TABLE users ADD COLUMN role VARCHAR(30) DEFAULT 'owner'")
     if user_statements:
