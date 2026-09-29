@@ -10,3 +10,6 @@ httpx==0.28.1
 itsdangerous==2.2.0
 cryptography==45.0.7
 razorpay==2.0.1
+frictionless[excel]==5.19.0
+langgraph==1.2.12
+sentry-sdk==2.70.0

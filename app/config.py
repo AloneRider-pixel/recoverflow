@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     razorpay_key_secret: str = ""
     whatsapp_graph_version: str = ""
     environment: str = "production"
+    sentry_dsn: str = ""
     public_base_url: str = ""
     sales_email: str = ""
     legal_entity_name: str = ""

@@ -91,7 +91,7 @@
       </div>
       <div class="px-3">
         <div class="px-2 mb-2 text-[9px] uppercase tracking-[.2em] text-slate-700 font-black">Workspace</div>
-        <a href="/" class="rf-nav-item {% if request.url.path=='/' %}active{% endif %}"><span class="rf-nav-dot"></span>Overview</a>
+        <a href="/" class="rf-nav-item {% if request.url.path=='/' %}active{% endif %}"><span class="rf-nav-dot"></span>Overview</a>\n        <a href="/today" class="rf-nav-item {% if request.url.path.startswith('/today') %}active{% endif %}"><span class="rf-nav-dot"></span>Today</a>
         <a href="/collections" class="rf-nav-item {% if request.url.path.startswith('/collections') %}active{% endif %}"><span class="rf-nav-dot"></span>Collections</a>
         <a href="/customers" class="rf-nav-item {% if request.url.path.startswith('/customers') %}active{% endif %}"><span class="rf-nav-dot"></span>Customers</a>
         <a href="/recurring" class="rf-nav-item {% if request.url.path.startswith('/recurring') %}active{% endif %}"><span class="rf-nav-dot"></span>Recurring</a>
