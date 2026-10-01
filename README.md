@@ -1,25 +1,18 @@
-# RecoverFlow
+# RecoverFlow — Receivables Operations Platform
 
-Receivables operations platform for SMBs: centralize invoices, surface overdue cash, coordinate follow-ups, create payment links, and manage collection workflows.
+Receivables operations platform for SMB workflows: invoices, overdue cash, follow-ups, payment links, messaging, subscriptions, and scheduled collection operations.
 
-## Product surfaces
+## Product surface
 
 ### Web / API
-
 - Authenticated receivables dashboard.
-- Invoice creation and CSV import.
-- Customer and follow-up workspace.
-- Razorpay payment links.
-- WhatsApp reminders.
-- Subscription billing and integration settings.
+- Invoice creation/import and customer management.
+- Collection workflow and follow-up operations.
+- Razorpay payment links and WhatsApp integrations.
+- Subscription and integration settings.
 
 ### Mobile
-
-- React Native + Expo client under `mobile/`.
-- Shared FastAPI backend.
-- Secure token storage with Expo SecureStore.
-- Invoice, customer, collection, notification, and account flows.
-- EAS-ready iOS/Android configuration.
+React Native + Expo client under `mobile/`, using secure token storage and EAS-oriented iOS/Android configuration.
 
 ## Architecture
 
@@ -28,15 +21,15 @@ Web / Mobile
      ↓
 FastAPI API
  ├── Authentication / sessions
- ├── Invoices / customers
+ ├── Invoice + customer domain
  ├── Collection engine
  ├── Payment integrations
  └── Scheduled operations
      ↓
 PostgreSQL
-
-Payment provider and messaging systems remain external trust boundaries.
 ```
+
+Payment providers and messaging systems remain external trust boundaries.
 
 ## Stack
 
@@ -45,11 +38,10 @@ Payment provider and messaging systems remain external trust boundaries.
 | Backend | FastAPI, SQLAlchemy, PostgreSQL |
 | Security | scrypt, signed sessions, encrypted credentials |
 | Integrations | Razorpay, WhatsApp, optional OpenAI |
-| Automation | scheduled internal endpoints / collection engine |
 | Mobile | React Native, Expo, SecureStore |
 | Delivery | Render, GitHub Actions |
 
-## Quick start
+## Development
 
 Backend:
 
@@ -65,14 +57,12 @@ Mobile:
 ```bash
 cd mobile
 npm install
-EXPO_PUBLIC_API_URL=https://recoverflow-7vnr.onrender.com npx expo start
+EXPO_PUBLIC_API_URL=<your-api-url> npx expo start
 ```
 
+Do not place live provider credentials in source control.
+
 ## Verification
-
-CI validates Python compilation/import and the deterministic collection-engine smoke path, plus mobile TypeScript typechecking.
-
-Useful local checks:
 
 ```bash
 python -m compileall -q app
@@ -81,33 +71,29 @@ cd mobile
 npx tsc --noEmit
 ```
 
-## Payment security
+CI runs the deterministic backend smoke path and mobile typecheck.
 
-RecoverFlow treats Razorpay checkout, webhooks, sessions, secrets, and customer data as separate trust boundaries. Provider signatures, idempotency, replay handling, and credential separation must remain intact.
+## Payment and automation safety
 
-The production gate distinguishes test credentials from live credentials. Do not enable real-money operations until live secrets, webhooks, HTTPS, legal identity, idempotency, and retry scenarios have been verified in the target environment.
-
-## Operations
-
-The repository includes scheduled recurring-invoice and overdue-reminder workflows. Production execution is secret-gated and skipped rather than bypassed when required credentials are absent.
+Keep Razorpay signatures, webhook validation, idempotency, replay protection, server-side credentials, and safe failure behavior intact. Scheduled operations must remain secret-gated; missing external credentials should produce an accurate non-production state rather than silently enabling real-money actions.
 
 ## Security
 
-Never commit API keys, webhook secrets, session secrets, or customer credentials. Keep payment-provider secrets exclusively server-side.
+See [SECURITY.md](SECURITY.md). Treat payment data, customer data, webhook payloads, and integration responses as untrusted external inputs.
 
-See [SECURITY.md](SECURITY.md).
+## Evidence policy
 
-## Evidence and limitations
+Collection, payment, conversion, reliability, and latency claims require a defined workload/dataset, environment, observation window, denominator, and producing commit.
 
-Product capability is not the same as production outcome. Any published collection, payment, reliability, latency, or conversion metric should identify the dataset/workload, environment, observation window, denominator, and producing commit.
+## Documentation
 
-## Review path
-
-Read [SECURITY.md](SECURITY.md) first, then review payment/webhook code, session boundaries, collection logic, and scheduled operations.
+- [Security](SECURITY.md)
+- [OSS stack](docs/OSS_STACK.md)
+- [Product roadmap](docs/PRODUCT_ROADMAP.md)
 
 ## Maintenance standard
 
-Preserve idempotency, signature verification, replay protection, secret boundaries, and safe failure behavior.
+Preserve idempotency, signature validation, secret boundaries, approval/scheduling gates, and safe failure semantics.
 
 ## License
 
