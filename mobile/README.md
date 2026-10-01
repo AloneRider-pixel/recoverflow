@@ -16,23 +16,21 @@ From `mobile/`:
 
 ```bash
 npm install
-EXPO_PUBLIC_API_URL=https://recoverflow-7vnr.onrender.com npx expo start
+EXPO_PUBLIC_API_URL=<your-api-url> npx expo start
 ```
 
-For remote push-notification validation, use an EAS development/production build on a physical device.
+## Release checklist
 
-## Release
-
-1. Link the Expo project with EAS.
-2. Configure project/notification credentials.
-3. Build Android/iOS with `eas build`.
-4. Validate authentication expiry, API compatibility, notifications, and payment-link flows.
-5. Submit the binaries only after backend compatibility checks pass.
+Validate authentication expiry, API compatibility, notification registration, payment-link behavior, and collection flows before distributing a build. Configure EAS/project credentials through the provider tooling; do not commit them.
 
 ## Security boundary
 
-The mobile bundle contains public configuration only. API/session tokens use platform-secure storage; payment-provider and database secrets remain backend-only.
+The mobile bundle contains public configuration only. API/session credentials use platform-secure storage; payment-provider and database secrets remain backend-only.
 
 ## Review path
 
-Check `src/api.ts`, authentication/token lifecycle, notification handling, and backend endpoint compatibility before release.
+Review `src/api.ts`, token lifecycle, notification handling, and API compatibility before release.
+
+## License
+
+MIT
