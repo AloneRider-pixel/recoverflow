@@ -43,7 +43,10 @@ The API uses signed bearer tokens. Browser sessions remain isolated from API aut
 - signed sessions
 - encrypted integration credentials
 - Razorpay + WhatsApp integrations
-- optional OpenAI copy generation\n- LangGraph action orchestration\n- Frictionless tabular validation\n- Optional Sentry production tracing
+- optional OpenAI copy generation
+- LangGraph action orchestration
+- Frictionless tabular validation
+- Optional Sentry production tracing
 
 ## Production environment
 
@@ -90,3 +93,11 @@ For production, keep the two Razorpay credential domains separate:
 The /launch page is a production gate. It reports test vs live credentials, HTTPS, session secret strength, payment idempotency, webhook replay protection, billing credentials, automation secrets and legal identity. Test credentials intentionally do not satisfy the production gate.
 
 Before enabling real-money operations, configure live Razorpay credentials, webhook secrets and production legal identity in Render, then perform successful, failed, retry, duplicate-click and webhook-retry tests in live/test environments as appropriate. Razorpay's Python integration guide recommends using webhooks as the primary asynchronous notification path and supplementing them with API verification for immediate user-facing confirmation. (https://razorpay.com/docs/server-integration/python/test-app/)
+
+## Repository review path
+
+Review [SECURITY.md](SECURITY.md) and the payment-security material in this README before changing payment, webhook, session, or integration code. Validate backend tests and the deployment configuration before enabling real-money operations.
+
+## Maintenance standard
+
+Treat payment providers, browser sessions, webhooks, secrets, and customer data as separate trust boundaries. Preserve idempotency and signature/replay protections when modifying payment flows.
