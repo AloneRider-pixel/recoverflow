@@ -1,103 +1,114 @@
 # RecoverFlow
 
-RecoverFlow is a receivables operations platform for SMBs: bring invoices into one workspace, surface overdue cash, send follow-ups, create payment links and close invoices faster.
+Receivables operations platform for SMBs: centralize invoices, surface overdue cash, coordinate follow-ups, create payment links, and manage collection workflows.
 
 ## Product surfaces
 
-### Web
-- Professional public marketing site at `/` when signed out
-- Authenticated receivables dashboard
-- Invoice creation + CSV import
-- Customer follow-up workspace
-- Razorpay payment links
-- WhatsApp reminders
-- Subscription billing
-- Integration settings
+### Web / API
+
+- Authenticated receivables dashboard.
+- Invoice creation and CSV import.
+- Customer and follow-up workspace.
+- Razorpay payment links.
+- WhatsApp reminders.
+- Subscription billing and integration settings.
 
 ### Mobile
-- React Native + Expo client under `/mobile`
-- Shared FastAPI + PostgreSQL backend
-- Secure bearer-token storage with Expo SecureStore
-- Mobile dashboard, invoice queue, invoice creation and account settings
-- One codebase for iOS and Android
 
-## API
+- React Native + Expo client under `mobile/`.
+- Shared FastAPI backend.
+- Secure token storage with Expo SecureStore.
+- Invoice, customer, collection, notification, and account flows.
+- EAS-ready iOS/Android configuration.
 
-Mobile and future web clients use the versioned API:
-- `POST /api/v1/auth/login`
-- `POST /api/v1/auth/register`
-- `GET /api/v1/me`
-- `GET /api/v1/dashboard`
-- `GET /api/v1/invoices`
-- `POST /api/v1/invoices`
-- `POST /api/v1/invoices/{id}/mark-paid`
+## Architecture
 
-The API uses signed bearer tokens. Browser sessions remain isolated from API authentication.
+```text
+Web / Mobile
+     ↓
+FastAPI API
+ ├── Authentication / sessions
+ ├── Invoices / customers
+ ├── Collection engine
+ ├── Payment integrations
+ └── Scheduled operations
+     ↓
+PostgreSQL
 
-## Backend
+Payment provider and messaging systems remain external trust boundaries.
+```
 
-- FastAPI
-- SQLAlchemy
-- PostgreSQL
-- scrypt password hashing
-- signed sessions
-- encrypted integration credentials
-- Razorpay + WhatsApp integrations
-- optional OpenAI copy generation
-- LangGraph action orchestration
-- Frictionless tabular validation
-- Optional Sentry production tracing
+## Stack
 
-## Production environment
+| Layer | Technology |
+|---|---|
+| Backend | FastAPI, SQLAlchemy, PostgreSQL |
+| Security | scrypt, signed sessions, encrypted credentials |
+| Integrations | Razorpay, WhatsApp, optional OpenAI |
+| Automation | scheduled internal endpoints / collection engine |
+| Mobile | React Native, Expo, SecureStore |
+| Delivery | Render, GitHub Actions |
 
-Set:
-- `DATABASE_URL`
-- `SESSION_SECRET`
-- `CRON_SECRET`
-- `WHATSAPP_GRAPH_VERSION`
-- `RAZORPAY_PLATFORM_KEY_ID`
-- `RAZORPAY_PLATFORM_KEY_SECRET`
-- `RAZORPAY_PLATFORM_WEBHOOK_SECRET` when subscription webhooks are enabled
+## Quick start
 
-Never commit credentials to GitHub.
+Backend:
 
-## Mobile development
+```bash
+cp .env.example .env
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-From `mobile/`:
-`npm install`
-`npx expo start`
+Mobile:
 
-The client defaults to the production RecoverFlow API and can be overridden with `EXPO_PUBLIC_API_URL`.
+```bash
+cd mobile
+npm install
+EXPO_PUBLIC_API_URL=https://recoverflow-7vnr.onrender.com npx expo start
+```
 
-## Deployment
+## Verification
 
-Current backend deployment:
-- Render web service
-- PostgreSQL database
-- automatic deploys from `main`
+CI validates Python compilation/import and the deterministic collection-engine smoke path, plus mobile TypeScript typechecking.
 
-The mobile client is prepared for Expo Application Services builds using `mobile/eas.json`.
+Useful local checks:
 
-## Payment security architecture
+```bash
+python -m compileall -q app
+python -c "from app.main import app; print(app.title)"
+cd mobile
+npx tsc --noEmit
+```
 
-RecoverFlow treats payment processing as a separate trust boundary. Razorpay hosts checkout; RecoverFlow does not store card numbers, bank credentials or payment instrument credentials. The backend creates orders, records transaction state, verifies the Razorpay signature, confirms the order/payment against Razorpay, and uses webhook events for asynchronous reconciliation. Razorpay recommends keeping API secrets out of version control, using HTTPS, validating callback signatures, and using webhooks with HMAC verification. (https://razorpay.com/security/checklist)
+## Payment security
 
-Payment transactions are persisted in payment_transactions with unique Razorpay order/payment IDs. Webhook deliveries are persisted in webhook_events with a unique provider event ID so retries and replays are not processed twice.
+RecoverFlow treats Razorpay checkout, webhooks, sessions, secrets, and customer data as separate trust boundaries. Provider signatures, idempotency, replay handling, and credential separation must remain intact.
 
-For production, keep the two Razorpay credential domains separate:
-- RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET — merchant credentials for customer invoice collection (workspace credentials take precedence where configured)
-- RAZORPAY_PLATFORM_KEY_ID / RAZORPAY_PLATFORM_KEY_SECRET — dedicated credentials for RecoverFlow subscription billing
-- RAZORPAY_PLATFORM_WEBHOOK_SECRET — webhook secret for RecoverFlow subscription billing
-- Workspace Razorpay webhook secret — webhook secret for customer invoice payment events
+The production gate distinguishes test credentials from live credentials. Do not enable real-money operations until live secrets, webhooks, HTTPS, legal identity, idempotency, and retry scenarios have been verified in the target environment.
 
-The /launch page is a production gate. It reports test vs live credentials, HTTPS, session secret strength, payment idempotency, webhook replay protection, billing credentials, automation secrets and legal identity. Test credentials intentionally do not satisfy the production gate.
+## Operations
 
-Before enabling real-money operations, configure live Razorpay credentials, webhook secrets and production legal identity in Render, then perform successful, failed, retry, duplicate-click and webhook-retry tests in live/test environments as appropriate. Razorpay's Python integration guide recommends using webhooks as the primary asynchronous notification path and supplementing them with API verification for immediate user-facing confirmation. (https://razorpay.com/docs/server-integration/python/test-app/)
+The repository includes scheduled recurring-invoice and overdue-reminder workflows. Production execution is secret-gated and skipped rather than bypassed when required credentials are absent.
 
-## Repository review path
+## Security
 
-Review [SECURITY.md](SECURITY.md) and the payment-security material in this README before changing payment, webhook, session, or integration code. Validate backend tests and the deployment configuration before enabling real-money operations.
+Never commit API keys, webhook secrets, session secrets, or customer credentials. Keep payment-provider secrets exclusively server-side.
+
+See [SECURITY.md](SECURITY.md).
+
+## Evidence and limitations
+
+Product capability is not the same as production outcome. Any published collection, payment, reliability, latency, or conversion metric should identify the dataset/workload, environment, observation window, denominator, and producing commit.
+
+## Review path
+
+Read [SECURITY.md](SECURITY.md) first, then review payment/webhook code, session boundaries, collection logic, and scheduled operations.
 
 ## Maintenance standard
 
-Treat payment providers, browser sessions, webhooks, secrets, and customer data as separate trust boundaries. Preserve idempotency and signature/replay protections when modifying payment flows.
+Preserve idempotency, signature verification, replay protection, secret boundaries, and safe failure behavior.
+
+## License
+
+MIT
