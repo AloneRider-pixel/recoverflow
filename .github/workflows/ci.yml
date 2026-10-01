@@ -1,6 +1,7 @@
 name: RecoverFlow CI
 
-on:  pull_request:
+on:
+  pull_request:
   push:
     branches: ["**"]
 
@@ -8,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: recoverflow-ci-{{ github.ref }}
+  group: recoverflow-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
