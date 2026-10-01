@@ -33,3 +33,11 @@ For remote push notifications, use an EAS development or production build on a p
 4. Submit the resulting binaries to Google Play and App Store.
 
 The mobile client uses the shared RecoverFlow API and does not contain payment-provider secrets.
+
+## Mobile security boundary
+
+The mobile app should contain only public configuration such as the API base URL. Authentication tokens and provider credentials must use the platform-secure mechanisms described by the implementation; payment-provider secrets belong exclusively on the backend.
+
+## Review path
+
+Before release, validate Android/iOS builds, authentication/session expiry, API compatibility, deep links/notifications, and payment-link actions against the current backend contract.
