@@ -1,6 +1,6 @@
 # RecoverFlow — Receivables Operations Platform
 
-Receivables operations platform for SMB workflows: invoices, overdue cash, follow-ups, payment links, messaging, subscriptions, and scheduled collection operations.
+Receivables operations platform for SMB workflows covering invoices, overdue cash, follow-ups, payment links, messaging, subscriptions, and scheduled collection operations.
 
 ## Product surface
 
@@ -16,17 +16,15 @@ React Native + Expo client under `mobile/`, using secure token storage and EAS-o
 
 ## Architecture
 
-```text
-Web / Mobile
-     ↓
-FastAPI API
- ├── Authentication / sessions
- ├── Invoice + customer domain
- ├── Collection engine
- ├── Payment integrations
- └── Scheduled operations
-     ↓
-PostgreSQL
+```mermaid
+graph TB
+    WEB[Web / Mobile] --> API[FastAPI API]
+    API --> AUTH[Authentication / sessions]
+    API --> INV[Invoices + customers]
+    API --> COL[Collection engine]
+    API --> PAY[Payment integrations]
+    API --> JOBS[Scheduled operations]
+    API --> DB[(PostgreSQL)]
 ```
 
 Payment providers and messaging systems remain external trust boundaries.
@@ -40,6 +38,17 @@ Payment providers and messaging systems remain external trust boundaries.
 | Integrations | Razorpay, WhatsApp, optional OpenAI |
 | Mobile | React Native, Expo, SecureStore |
 | Delivery | Render, GitHub Actions |
+
+## Repository map
+
+```text
+app/                    # FastAPI application
+mobile/                 # React Native / Expo client
+docs/                   # operational and product documentation
+requirements.txt
+Dockerfile / deployment configuration
+.github/workflows/
+```
 
 ## Development
 
@@ -75,11 +84,15 @@ CI runs the deterministic backend smoke path and mobile typecheck.
 
 ## Payment and automation safety
 
-Keep Razorpay signatures, webhook validation, idempotency, replay protection, server-side credentials, and safe failure behavior intact. Scheduled operations must remain secret-gated; missing external credentials should produce an accurate non-production state rather than silently enabling real-money actions.
+Keep payment-provider signature validation, webhook verification, idempotency, replay protection, server-side credentials, and safe failure semantics intact.
 
-## Security
+Scheduled operations must remain secret-gated. Missing external credentials should produce an accurate non-production state rather than silently enabling real-money or customer-facing actions.
 
-See [SECURITY.md](SECURITY.md). Treat payment data, customer data, webhook payloads, and integration responses as untrusted external inputs.
+## Security model
+
+Treat payment data, customer data, webhook payloads, integration responses, and scheduled-job inputs as untrusted external data. Preserve authentication, authorization, signature verification, secret boundaries, and server-side provider access.
+
+See [SECURITY.md](SECURITY.md).
 
 ## Evidence policy
 
@@ -91,9 +104,9 @@ Collection, payment, conversion, reliability, and latency claims require a defin
 - [OSS stack](docs/OSS_STACK.md)
 - [Product roadmap](docs/PRODUCT_ROADMAP.md)
 
-## Maintenance standard
+## Contribution standard
 
-Preserve idempotency, signature validation, secret boundaries, approval/scheduling gates, and safe failure semantics.
+Preserve idempotency, payment-signature verification, safe scheduling, authorization boundaries, and accurate failure states. Add regression coverage for changes affecting money movement or customer-visible collection workflows.
 
 ## License
 
